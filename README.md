@@ -380,7 +380,7 @@ and asks for speech.
 
 Plugins (`bridge/plugins/README.md`) produce cards or pictures. The Plugins tab
 lists each plugin as a closed section and opens one section at a time. This prevents
-the page from showing all fields for eight plugins at once. A selector at the top
+the page from showing all fields for nine plugins at once. A selector at the top
 jumps to a named plugin. The tab previews a plugin and saves it as a **job**: a plugin, its
 parameters, the frames, an interval and a priority. The bridge keeps jobs in
 `~/.config/easellet-bridge/jobs.toml` (owner-only). Secret parameters are
@@ -421,6 +421,13 @@ The weather plugin takes the place from the question («покажи погод�
 case endings by trying base forms against Open-Meteo's geocoder. The geocoder must
 return that exact name. If the plugin cannot find a place, it says so aloud («Не
 нашёл место «…»») and shows the configured place instead.
+
+The agenda plugin reads an iCalendar (`.ics`) calendar: a private address, a
+`file://` address, or a path on the bridge host. By voice, the day comes from the
+question («что у меня завтра», «расписание на неделю», "what is on tomorrow"), so
+the card shows that day or that week instead of the default number of days. The
+private address of a calendar is a key, and the bridge stores it as a secret
+parameter.
 
 Recognition is steered in two ways. The frame's language (`ai.lang`) gives that
 language a head start in Whisper's language detection, so a lone «Рамка» is not

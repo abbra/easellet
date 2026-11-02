@@ -150,12 +150,24 @@ Card layouts:
 | Plugin | Shows | Needs |
 | --- | --- | --- |
 | `weather` | A forecast for a place. By voice, for the place named («…погоду в Эспоо», "…weather in Espoo"). | Nothing (Open-Meteo). |
+| `agenda` | The next events of an iCalendar calendar. By voice, for the day named («что у меня завтра», "what is on tomorrow"). | A calendar address, a file, or a path. No key. |
 | `news` | Headlines of an RSS/Atom feed. | A feed URL. |
 | `ci` | The latest open PRs of a GitHub repository, each with how many checks failed, ran and passed (Actions and external CI). | A read-only token (see below). |
 | `note` | A title and text. | — |
 | `photo-folder` | Photos from a folder on this host, in turn. | A folder. |
 | `ai-image` | A generated picture. | An OpenAI-compatible images endpoint. |
 | `hello`, `system` | Examples. | — |
+
+`agenda` reads an `.ics` calendar from an `http`, `https`, `webcal` or `file`
+address, or from a path on this host. A calendar's private address is a key that
+shows the whole calendar, so the parameter has type `secret`: the bridge stores it
+and never sends it back to a browser. The plugin expands recurring events for the
+days that the card shows. It reads `FREQ` with `INTERVAL`, `COUNT`, `UNTIL`,
+`BYDAY` and `BYMONTHDAY`, and it honours `EXDATE` and `STATUS:CANCELLED`. Other
+properties are ignored. All-day events have no time. A timed event shows its
+start. The card answers `none` when its rows do not change, and it asks for the
+next run when the first event starts, so a finished row does not stay on the
+panel.
 
 `ci` counts both kinds of CI reports on a PR's head commit: check runs (GitHub
 Actions and other apps) and commit statuses (external CI). Its token is a GitHub

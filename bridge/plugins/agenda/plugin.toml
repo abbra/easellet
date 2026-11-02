@@ -1,0 +1,53 @@
+name = "agenda"
+title = "Календарь"
+description = "Ближайшие события из календаря iCalendar (.ics): адрес, файл на этом хосте или путь. Без изменений — без обновления рамки."
+i18n = { en = { title = "Calendar", description = "The next events of an iCalendar (.ics) calendar: an address, a file on this host or a path. Unchanged — no frame update." } }
+run = "run.py"
+timeout_s = 20
+outputs = ["card", "none"]
+default_every = "30m"
+
+[[param]]
+id = "url"
+type = "secret"
+title = "Календарь"
+required = true
+note = "Адрес .ics, file:///путь или путь. Ссылка «секретного адреса» календаря — это ключ: её хранит только мост."
+i18n = { en = { title = "Calendar", note = "An .ics address, file:///path or a path. A calendar's «secret address» link is a key: only the bridge stores it." } }
+
+[[param]]
+id = "days"
+type = "choice"
+title = "Сколько дней"
+choices = ["1", "2", "3", "5", "7"]
+default = "3"
+i18n = { en = { title = "How many days" } }
+
+[[param]]
+id = "max"
+type = "choice"
+title = "Сколько событий"
+choices = ["3", "4", "5", "6", "7"]
+default = "6"
+i18n = { en = { title = "How many events" } }
+
+[[param]]
+id = "title"
+type = "string"
+title = "Заголовок"
+note = "Пусто — «Расписание» или «Завтра», по вопросу."
+i18n = { en = { title = "Heading", note = "Empty — «Schedule» or «Tomorrow», from the question." } }
+
+[[param]]
+id = "question"
+type = "text"
+title = "Вопрос"
+hidden = true
+note = "Заполняет ассистент: «что у меня завтра» показывает завтрашний день."
+i18n = { en = { title = "Question", note = "Filled by the assistant: «what do I have tomorrow» shows tomorrow." } }
+
+[assistant]
+text_param = "question"
+phrases = ["что сегодня", "что у меня сегодня", "что завтра", "что у меня завтра", "какие планы", "расписание", "покажи расписание", "what is on today", "what is on tomorrow", "my schedule", "show my agenda"]
+intent = "показать расписание"
+description = "Show the next calendar events on the frame."
