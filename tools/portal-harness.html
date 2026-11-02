@@ -1,0 +1,199 @@
+<!doctype html>
+<!-- Drives the real portal in a same-origin iframe and reports what happened.
+     Served by tools/portal-mock.py at /harness.html; not part of the firmware.
+
+     Clicks that must land within the page's five-second confirmation window are
+     dispatched from one script, which no human-speed automation of this kind can
+     otherwise manage. -->
+<html lang="ru">
+<meta charset="utf-8">
+<title>portal harness</title>
+<style>
+  body { font: 14px/1.5 ui-monospace, monospace; margin: 1rem; }
+  #log li { margin: .25rem 0; }
+  .ok { color: #0a7f3f; }
+  .bad { color: #b42318; }
+  #stage { position: absolute; left: -4000px; top: 0; }
+</style>
+<h1>portal harness</h1>
+<ol id="log"></ol>
+<div id="stage"><iframe id="frame" src="./index.html#gallery" width="1200" height="1600"></iframe></div>
+
+<script>
+const log = (ok, text) => {
+  const item = document.createElement("li");
+  item.className = ok ? "ok" : "bad";
+  item.textContent = `${ok ? "ok  " : "FAIL"} ${text}`;
+  document.getElementById("log").append(item);
+  return ok;
+};
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function until(check, timeout = 20000, step = 100) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const value = check();
+    if (value) return value;
+    await wait(step);
+  }
+  return null;
+}
+
+async function main() {
+  const frame = document.getElementById("frame");
+  await new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
+  const doc = frame.contentDocument;
+  const $ = (id) => doc.getElementById(id);
+  const cards = () => [...doc.querySelectorAll("figure.frame")];
+
+  // --- the list arrives -------------------------------------------------
+  const chip = await until(() => $("gallery-chip").textContent.includes("PFTEST"));
+  log(Boolean(chip), `список: ${$("gallery-chip").textContent}`);
+
+  const total = Number($("tab-count").textContent);
+  log(total > 12, `всего картинок: ${total}`);
+
+  // --- one page at a time ----------------------------------------------
+  await wait(1200);
+  log(cards().length === 12, `на странице 12 карточек: ${cards().length}`);
+  log($("page-label").textContent.startsWith("1 /"), `страницы: ${$("page-label").textContent}`);
+
+  // Expectations are derived from the collection, not hard-coded: the harness
+  // may run against a gallery that earlier runs have already emptied in part.
+  const firstOfPage = cards()[0].dataset.name;
+  $("page-next").click();
+  const second = await until(
+    () => $("page-label").textContent.startsWith("2 /") && cards()[0]?.dataset.name !== firstOfPage
+  );
+  log(Boolean(second), `вторая страница начинается с ${cards()[0]?.dataset.name}`);
+  $("page-prev").click();
+  await until(() => cards()[0]?.dataset.name === firstOfPage);
+
+  // --- search narrows without refetching -------------------------------
+  // A picture the page may delete, not one of the vendor's: those sort first and
+  // carry no number.
+  const numbered = cards().map((figure) => figure.dataset.name).filter((name) => /\d+\.PF6$/.test(name));
+  const digits = numbered.at(-1)?.match(/(\d+)\.PF6$/)?.[1] ?? "";
+  $("gallery-search").value = digits;
+  $("gallery-search").dispatchEvent(new Event("input"));
+  await wait(300);
+  const narrowed = cards().filter((figure) => figure.dataset.name.includes(digits));
+  log(
+    narrowed.length === cards().length && cards().length === 1,
+    `поиск «${digits}»: ${cards().length} карточек`
+  );
+  log($("pager").hidden, "при одной карточке страницы скрыты");
+  $("gallery-search").value = "";
+  $("gallery-search").dispatchEvent(new Event("input"));
+  await wait(300);
+
+  // --- delete: two clicks, then the count must fall ---------------------
+  $("gallery-select-page").click();
+  const armedLabel = $("gallery-remove").textContent;
+  $("gallery-remove").click();              // arms
+  const armed = $("gallery-remove").dataset.armed === "1";
+  $("gallery-remove").click();              // confirms, same task
+  const settled = await until(() => /Удалено: \d+/.test($("gallery-message").textContent), 30000);
+  const removed = Number($("gallery-message").textContent.match(/Удалено: (\d+)/)?.[1] ?? 0);
+  log(armed, `первый клик только взводит: "${armedLabel}"`);
+  log(
+    Boolean(settled) && $("gallery-chip").textContent.startsWith(String(total - removed)),
+    `после удаления: ${$("gallery-chip").textContent}`
+  );
+  log(removed > 0, `сообщение: ${$("gallery-message").textContent}`);
+  log(cards().length === 12, `страница доехала: ${cards().length} карточек`);
+
+  // --- vendor pictures are shown and left alone ------------------------
+  // Search for the vendor's own file: it must appear, without a working delete.
+  $("gallery-search").value = "800X480";
+  $("gallery-search").dispatchEvent(new Event("input"));
+  await wait(400);
+  const vendorCard = cards()[0];
+  const vendorDelete = vendorCard?.querySelector(".trash");
+  log(
+    Boolean(vendorCard) && vendorDelete.disabled && vendorDelete.textContent === "не удаляется",
+    `картинка прошивки: ${vendorCard?.dataset.name} → "${vendorDelete?.textContent}"`
+  );
+  log(
+    vendorCard?.querySelector(".pick")?.hidden === true,
+    "у картинки прошивки нет флажка выбора"
+  );
+  $("gallery-search").value = "";
+  $("gallery-search").dispatchEvent(new Event("input"));
+  await wait(400);
+
+  // --- the frame refuses what it must refuse ---------------------------
+  const refused = await fetch("/delete?path=CONFIG.TXT", {
+    method: "POST",
+    headers: { "X-Photoframe": "1" },
+  });
+  const refusedText = (await refused.text()).trim();
+  log(refused.status === 403, `удаление вне PFTEST: ${refused.status} ${refusedText.slice(0, 40)}`);
+
+  // --- tabs -------------------------------------------------------------
+  const settingsLink = $("tab-link-settings");
+  settingsLink.click();
+  await wait(200);
+  const tabs = {
+    settings: !$("tab-settings").hidden,
+    photos: $("tab-photos").hidden,
+    gallery: $("tab-gallery").hidden,
+    selected: settingsLink.getAttribute("aria-selected"),
+  };
+  log(
+    tabs.settings && tabs.photos && tabs.gallery && tabs.selected === "true",
+    `вкладка «Настройки»: ${JSON.stringify(tabs)}`
+  );
+
+  $("tab-link-photos").click();
+  await wait(200);
+  log(!$("tab-photos").hidden && $("tab-gallery").hidden, "вкладка «Фотография» вернулась");
+
+  // The gallery keeps the connection busy with frame fetches, so `/settings`
+  // can queue behind them; give it as long as the other checks get.
+  const loaded = await until(() => $("ai-url").value.length > 0, 20000);
+  log(
+    Boolean(loaded),
+    `настройки прочитаны: ai.url=${$("ai-url").value} message="${$("settings-message").textContent.trim()}"`
+  );
+
+  // The language box offers exactly the four the bridge hears, and a tag that is
+  // not on the list is kept instead of blanking the field.
+  const lang = $("ai-lang");
+  const offered = [...lang.options].map((option) => option.value);
+  log(
+    offered.join(",") === "ru-RU,en-US,fi-FI,fr-FR" && lang.value === "ru-RU",
+    `языки: ${offered.join(", ")} выбрано=${lang.value}`
+  );
+  // A tag this page does not offer comes back from the frame (a hand-edited
+  // CONFIG.TXT, or a language added to the bridge later), and it must be shown
+  // rather than silently blanking a field that means "keep".
+  await fetch("/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Photoframe": "1" },
+    body: "ai.lang=de-DE",
+  });
+  $("reload-settings").click();
+  const keptOption = await until(() => lang.value === "de-DE", 20000);
+  log(
+    Boolean(keptOption) && [...lang.options].some((option) => option.dataset.kept),
+    `язык вне списка показан: ${lang.value}`
+  );
+  await fetch("/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Photoframe": "1" },
+    body: "ai.lang=ru-RU",
+  });
+  $("reload-settings").click();
+  const back = await until(() => lang.value === "ru-RU", 20000);
+  log(
+    Boolean(back) && ![...lang.options].some((option) => option.dataset.kept),
+    `язык вернулся в список: ${lang.value}, вариантов ${lang.options.length}`
+  );
+
+  document.title = "done";
+}
+
+main().catch((error) => log(false, `harness: ${error}`));
+</script>
