@@ -1,6 +1,7 @@
 name = "note"
 title = "Записка"
 description = "Сообщение на рамку: заголовок и текст."
+i18n = { en = { title = "Note", description = "A message for the frame: a heading and text." } }
 run = "run.py"
 timeout_s = 5
 outputs = ["card"]
@@ -10,11 +11,13 @@ id = "title"
 type = "string"
 title = "Заголовок"
 default = "Записка"
+i18n = { en = { title = "Heading" } }
 
 [[param]]
 id = "text"
 type = "text"
 title = "Текст"
+i18n = { en = { title = "Text" } }
 
 [[param]]
 id = "accent"
@@ -22,6 +25,7 @@ type = "choice"
 title = "Цвет"
 choices = ["blue", "red", "green", "yellow", "black"]
 default = "blue"
+i18n = { en = { title = "Colour" } }
 
 [assistant]
 text_param = "text"

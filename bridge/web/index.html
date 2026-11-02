@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <meta charset="utf-8">
-<title>Мост фоторамок</title>
+<title data-i18n="app.title">Easellet bridge</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- The look is the frame portal's (web/index.html), copied so the two pages
      read as one product; the bridge-only rules follow it. -->
@@ -44,6 +44,13 @@
   }
   main { max-width: 62rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
   header.top { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: baseline; justify-content: space-between; margin-bottom: 1.25rem; }
+  /* The interface language, not the language the frame answers in. Autonyms
+     only: a name is never translated into a language it is not in. */
+  .chips select.lang {
+    font: inherit; font-size: .8rem; padding: .25rem .5rem; border-radius: 999px;
+    width: auto; flex: 0 0 auto;
+    color: var(--muted); background: var(--card); border: 1px solid var(--line);
+  }
   h1 { font-size: 1.5rem; font-weight: 650; letter-spacing: -.01em; margin: 0; }
   h1 small { display: block; font-size: .85rem; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-top: .2rem; }
   .chips { display: flex; gap: .5rem; flex-wrap: wrap; }
@@ -207,12 +214,28 @@
   /* `display` above would otherwise override the `hidden` attribute. */
   img.preview[hidden], canvas[hidden] { display: none; }
   .add-frame { margin-top: 1rem; }
-  .plugin-list { display: grid; gap: 1rem; }
+  .plugin-list { display: grid; gap: .75rem; }
+  /* A closed section per plugin: the head stays readable at a glance, the
+     fields only appear for the plugin being used. */
+  .plugin > summary {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: .15rem .6rem;
+    cursor: pointer; list-style: none;
+  }
+  .plugin > summary::-webkit-details-marker { display: none; }
+  .plugin > summary::after {
+    content: "▸"; margin-left: auto; color: var(--muted); font-size: .8rem;
+  }
+  .plugin[open] > summary::after { content: "▾"; }
+  .plugin[open] > summary { margin-bottom: .7rem; }
+  .plugin-inner { display: grid; gap: .6rem; }
+  /* `.row` sets display, which would otherwise win over the hidden attribute. */
+  #plugin-jump-row[hidden] { display: none; }
+  #plugin-jump { max-width: 22rem; }
   h2.sub { margin-top: 1.6rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
   .schedule { display: grid; gap: .5rem; border-top: 1px dashed var(--line); padding-top: .6rem; }
   .schedule .frames-pick { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
-  .plugin { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; display: grid; gap: .6rem; }
-  .plugin h3 { margin: 0; font-size: 1.05rem; }
+  .plugin { border: 1px solid var(--line); border-radius: 12px; padding: .8rem 1rem; }
+  .plugin > summary .title { font-size: 1.05rem; font-weight: 600; }
   .plugin .where { font-size: .75rem; color: var(--muted); }
   .plugin .form { display: grid; gap: .5rem; }
   @media (min-width: 780px) { .plugin .body { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 1rem; align-items: start; } }
@@ -227,71 +250,74 @@
 <body>
 <main>
   <header class="top">
-    <h1>Мост фоторамок <small>Рамки · плагины · ассистент · настройки</small></h1>
+    <h1><span data-i18n="app.title">Easellet bridge</span> <small data-i18n="app.tagline">Frames · plugins · assistant · settings</small></h1>
     <div class="chips">
-      <span class="chip"><span class="dot" id="link-dot"></span><span id="link-text">связь…</span></span>
+      <span class="chip"><span class="dot" id="link-dot"></span><span id="link-text" data-i18n="link.connecting">link…</span></span>
       <span class="chip" id="backends-chip">…</span>
+      <select id="ui-lang" class="lang" data-i18n-aria="lang.label" aria-label="Interface language"></select>
     </div>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Разделы">
-    <a href="#frames" role="tab" id="tab-link-frames" aria-controls="tab-frames">Рамки</a>
-    <a href="#plugins" role="tab" id="tab-link-plugins" aria-controls="tab-plugins">Плагины</a>
-    <a href="#assistant" role="tab" id="tab-link-assistant" aria-controls="tab-assistant">Ассистент</a>
-    <a href="#settings" role="tab" id="tab-link-settings" aria-controls="tab-settings">Настройки</a>
+  <nav class="tabs" role="tablist" data-i18n-aria="nav.label" aria-label="Sections">
+    <a href="#frames" role="tab" id="tab-link-frames" aria-controls="tab-frames" data-i18n="tab.frames">Frames</a>
+    <a href="#plugins" role="tab" id="tab-link-plugins" aria-controls="tab-plugins" data-i18n="tab.plugins">Plugins</a>
+    <a href="#assistant" role="tab" id="tab-link-assistant" aria-controls="tab-assistant" data-i18n="tab.assistant">Assistant</a>
+    <a href="#settings" role="tab" id="tab-link-settings" aria-controls="tab-settings" data-i18n="tab.settings">Settings</a>
   </nav>
 
   <section class="card" id="tab-frames" role="tabpanel" aria-labelledby="tab-link-frames" hidden>
-    <h2>Рамки</h2>
+    <h2 data-i18n="frames.title">Frames</h2>
     <div class="row">
-      <button id="frames-scan">Искать в сети</button>
+      <button id="frames-scan" data-i18n="frames.scan">Scan the network</button>
       <span class="grow"></span>
       <span class="note" id="frames-note"></span>
     </div>
     <div class="frame-list" id="frame-list"></div>
     <details class="add-frame">
-      <summary>Добавить рамку по адресу</summary>
+      <summary data-i18n="frames.addTitle">Add a frame by address</summary>
       <div class="row">
-        <input type="text" id="add-host" placeholder="192.168.50.204" aria-label="Адрес">
-        <input type="text" id="add-name" placeholder="название (необязательно)" aria-label="Название">
-        <input type="password" id="add-password" placeholder="пароль портала, если есть" aria-label="Пароль">
-        <button id="add-frame">Добавить</button>
+        <input type="text" id="add-host" placeholder="192.168.50.204" data-i18n-placeholder="frames.host" data-i18n-aria="frames.host" aria-label="Address">
+        <input type="text" id="add-name" data-i18n-placeholder="frames.name" data-i18n-aria="frames.name" placeholder="name (optional)" aria-label="Name">
+        <input type="password" id="add-password" data-i18n-placeholder="frames.password" data-i18n-aria="frames.password" placeholder="portal password, if any" aria-label="Password">
+        <button id="add-frame" data-i18n="frames.add">Add</button>
       </div>
-      <p class="note">Для сетей, где поиск (mDNS) не доходит, и для рамок с паролем портала.</p>
+      <p class="note" data-i18n="frames.addNote">For networks where discovery (mDNS) does not reach, and for frames with a portal password.</p>
     </details>
     <p class="message" id="frames-message"></p>
   </section>
 
   <section class="card" id="tab-plugins" role="tabpanel" aria-labelledby="tab-link-plugins" hidden>
-    <h2>Плагины</h2>
-    <p class="note">Плагин — программа на машине моста: она решает, что показать, а мост рисует это для рамки.
-      Добавить плагин можно только на самой машине (см. <code>bridge/plugins/README.md</code>); здесь их можно
-      настроить, посмотреть и показать.</p>
+    <h2 data-i18n="plugins.title">Plugins</h2>
+    <p class="note" data-i18n-html="plugins.note">A plugin is a program on the bridge's own machine: it decides
+      what to show, and the bridge draws it for the frame. A plugin can only be added on that
+      machine (see <code>bridge/plugins/README.md</code>); here you can configure one, preview it and show it.</p>
+    <div class="row" id="plugin-jump-row" hidden>
+      <select id="plugin-jump" data-i18n-aria="plugins.jump"></select>
+    </div>
     <div class="plugin-list" id="plugin-list"></div>
     <p class="note" id="plugin-problems"></p>
-    <h2 class="sub">Задания</h2>
-    <p class="note">Задание запускает плагин по расписанию и отправляет результат рамкам. Неспящей рамке
-      картинка приходит сразу; спящая (на батарее, с <code>bridge.url</code>) забирает её при следующем
-      пробуждении. Одинаковая картинка второй раз не отправляется.</p>
+    <h2 class="sub" data-i18n="jobs.title">Jobs</h2>
+    <p class="note" data-i18n-html="jobs.note">A job runs a plugin on a schedule and sends the result to the
+      frames. An awake frame receives the picture at once; a sleeping one (on battery, with
+      <code>bridge.url</code>) picks it up on its next wake-up. The same picture is not sent twice.</p>
     <div class="turns" id="job-list"></div>
-    <h2 class="sub">Журнал</h2>
+    <h2 class="sub" data-i18n="runs.title">Log</h2>
     <div class="turns" id="run-list"></div>
   </section>
 
   <section class="card" id="tab-assistant" role="tabpanel" aria-labelledby="tab-link-assistant" hidden>
-    <h2>Спросить ассистента</h2>
+    <h2 data-i18n="assistant.title">Ask the assistant</h2>
     <div class="row ask">
-      <input type="text" id="ask-text" class="grow" placeholder="Например: сколько будет семь на восемь?" aria-label="Вопрос">
-      <button class="primary" id="ask-send">Спросить</button>
+      <input type="text" id="ask-text" class="grow" data-i18n-placeholder="assistant.placeholder" data-i18n-aria="assistant.question" placeholder="For example: how much is seven times eight?" aria-label="Question">
+      <button class="primary" id="ask-send" data-i18n="assistant.ask">Ask</button>
     </div>
     <p class="message" id="ask-answer"></p>
     <audio id="ask-audio" controls hidden></audio>
-    <p class="note">Микрофон в браузере работает только по HTTPS или на localhost, поэтому здесь — текстом.
-      Вопрос и ответ попадают в историю ниже (адрес «bridge-ui»).</p>
-    <h2 class="sub">Что спрашивали рамки</h2>
+    <p class="note" data-i18n="assistant.note">The browser microphone works only over HTTPS or on localhost,
+      so here it is text. The question and the answer land in the history below (peer “bridge-ui”).</p>
+    <h2 class="sub" data-i18n="history.title">What the frames asked</h2>
     <div class="row">
-      <button id="history-refresh">Обновить</button>
-      <label class="option"><input type="checkbox" id="history-rejected" checked> показывать отклонённые</label>
+      <button id="history-refresh" data-i18n="history.refresh">Refresh</button>
       <span class="grow"></span>
       <span class="note" id="history-count"></span>
     </div>
@@ -299,11 +325,11 @@
   </section>
 
   <section class="card" id="tab-settings" role="tabpanel" aria-labelledby="tab-link-settings" hidden>
-    <h2>Настройки моста</h2>
+    <h2 data-i18n="settings.title">Bridge settings</h2>
     <form id="settings-form" autocomplete="off"></form>
     <div class="row">
-      <button class="primary" id="settings-save">Сохранить</button>
-      <button id="settings-reload">Перечитать</button>
+      <button class="primary" id="settings-save" data-i18n="settings.save">Save</button>
+      <button id="settings-reload" data-i18n="settings.reload">Re-read</button>
     </div>
     <p class="note" id="settings-file"></p>
     <p class="message" id="settings-message"></p>
@@ -311,6 +337,402 @@
 
   <footer>easellet-bridge <span id="version"></span></footer>
 </main>
+<!-- Interface language. English is the default; the selector in the header
+     switches it and the choice survives a reload. Adding a language is one
+     object in STRINGS and one entry in LANGUAGES, everything else is
+     `data-i18n` in the markup and t() in the script. -->
+<script>
+const LANGUAGES = [
+  ["en", "English"],
+  ["ru", "Русский"],
+];
+
+const STRINGS = {
+  en: {
+    "app.title": "Easellet bridge",
+    "app.tagline": "Frames · plugins · assistant · settings",
+    "lang.label": "Interface language",
+    "nav.label": "Sections",
+    "link.connecting": "link…",
+    "link.online": "online · {uptime}",
+    "link.down": "no link",
+    "tab.frames": "Frames",
+    "tab.plugins": "Plugins",
+    "tab.assistant": "Assistant",
+    "tab.settings": "Settings",
+    "uptime.s": "{n} s",
+    "uptime.min": "{n} min",
+    "uptime.h": "{n} h",
+    "frames.title": "Frames",
+    "frames.scan": "Scan the network",
+    "frames.searching": "searching…",
+    "frames.count.one": "{count} frame",
+    "frames.count.many": "{count} frames",
+    "frames.failed": "Failed: {error}",
+    "frames.empty": "No frames found. A frame on battery is asleep and does not answer; wake it with the button or add it by address.",
+    "frames.ago.never": "never answered yet",
+    "frames.ago.online": "online",
+    "frames.ago.min": "seen {n} min ago",
+    "frames.ago.hour": "seen {n} h ago",
+    "frames.addTitle": "Add a frame by address",
+    "frames.host": "Address",
+    "frames.name": "name (optional)",
+    "frames.password": "portal password, if any",
+    "frames.add": "Add",
+    "frames.addNote": "For networks where discovery (mDNS) does not reach, and for frames with a portal password.",
+    "frames.adding": "Adding and checking…",
+    "frames.added": "Added: {host}",
+    "frames.noMac": "no MAC",
+    "frames.found": "found on the network",
+    "frames.manual": "added by hand",
+    "card.modeCover": "fill the frame",
+    "card.modeContain": "fit",
+    "card.dither": "smooth",
+    "card.showNow": "Show now",
+    "card.saveGallery": "Save to gallery",
+    "card.notPicture": "Not a picture: {error}",
+    "card.sending": "Sending…",
+    "card.saving": "Saving…",
+    "card.gallery": "Gallery",
+    "card.removeFrame": "Remove from list",
+    "card.loading": "Loading…",
+    "card.galleryEmpty": "The gallery is empty.",
+    "card.galleryDown": "Gallery unavailable: {error}",
+    "card.showOne": "Show",
+    "card.delete": "Delete",
+    "card.confirm": "Sure?",
+    "note.summary": "Message to the frame",
+    "note.title": "Heading",
+    "note.body": "Message text",
+    "note.defaultTitle": "Message",
+    "note.preview": "Preview",
+    "note.show": "Show on the frame",
+    "note.alt": "How the frame will show it",
+    "color.blue": "blue",
+    "color.red": "red",
+    "color.green": "green",
+    "color.yellow": "yellow",
+    "color.black": "black",
+    "plugins.title": "Plugins",
+    "plugins.note": "A plugin is a program on the bridge's own machine: it decides what to show, and the bridge draws it for the frame. A plugin can only be added on that machine (see <code>bridge/plugins/README.md</code>); here you can configure one, preview it and show it.",
+    "plugins.empty": "No plugins. Directories: {dirs}",
+    "plugins.skipped": "Skipped: {problems}",
+    "plugins.jump": "Jump to a plugin…",
+    "load.failed": "Could not load: {error}",
+    "plugin.targetNone": "no frame (just preview)",
+    "plugin.preview": "Preview",
+    "plugin.show": "Show on the frame",
+    "plugin.alt": "How the frame will show it",
+    "plugin.running": "Running…",
+    "plugin.done": "Done in {ms} ms",
+    "plugin.showing": "Running and sending…",
+    "jobs.title": "Jobs",
+    "jobs.note": "A job runs a plugin on a schedule and sends the result to the frames. An awake frame receives the picture at once; a sleeping one (on battery, with <code>bridge.url</code>) picks it up on its next wake-up. The same picture is not sent twice.",
+    "jobs.everyN": "every {n} min",
+    "jobs.manual": "manually",
+    "jobs.modeGallery": "to the gallery",
+    "jobs.modeShow": "show",
+    "jobs.priority": "priority {level}",
+    "jobs.disabled": "off",
+    "jobs.run": "Run now",
+    "jobs.delete": "Delete",
+    "jobs.confirm": "Sure?",
+    "jobs.running": "Running…",
+    "jobs.noParams": "no parameters",
+    "jobs.empty": "No jobs yet: configure a plugin above and save it as a job.",
+    "jobs.scheduleSave": "Save as a job",
+    "jobs.noFrames": "no frames yet",
+    "jobs.every.manual": "manually only",
+    "jobs.every.15": "every 15 min",
+    "jobs.every.30": "every 30 min",
+    "jobs.every.hour": "every hour",
+    "jobs.every.3h": "every 3 h",
+    "jobs.every.6h": "every 6 h",
+    "jobs.every.12h": "every 12 h",
+    "jobs.every.day": "once a day",
+    "jobs.mode.show": "show (do not store on the frame)",
+    "jobs.mode.gallery": "add to the frame's gallery",
+    "jobs.save": "Save job",
+    "jobs.saved": "Saved: {id}",
+    "runs.title": "Log",
+    "runs.ms": "{ms} ms",
+    "runs.empty": "No runs yet.",
+    "results.shown": "shown",
+    "results.queued": "queued for the frame",
+    "results.stored": "stored in the gallery",
+    "results.unchanged": "unchanged",
+    "results.nothing new": "nothing new",
+    "results.failed": "failed",
+    "sensors.battery": "battery {percent}% ({volts} V)",
+    "sensors.charging": " · charging",
+    "sensors.usb": " · USB",
+    "assistant.title": "Ask the assistant",
+    "assistant.placeholder": "For example: how much is seven times eight?",
+    "assistant.question": "Question",
+    "assistant.ask": "Ask",
+    "assistant.note": "The browser microphone works only over HTTPS or on localhost, so here it is text. The question and the answer land in the history below (peer “bridge-ui”).",
+    "assistant.thinking": "Thinking…",
+    "history.title": "What the frames asked",
+    "history.refresh": "Refresh",
+    "history.empty": "Nothing yet: ask the frame.",
+    "history.emptyTurn": "(empty)",
+    "history.trigger.key": "button",
+    "history.trigger.voice": "voice",
+    "history.trigger.console": "console",
+    "history.trigger.text": "text",
+    "history.stt": "recognition {ms} ms",
+    "history.llm": "answer {ms} ms",
+    "history.tts": "voice {ms} ms",
+    "settings.title": "Bridge settings",
+    "settings.save": "Save",
+    "settings.reload": "Re-read",
+    "settings.file": "File: {file}",
+    "settings.restartBadge": "after restart",
+    "settings.pinnedBadge": "set on the command line",
+    "settings.secretSet": "set; blank — keep, “-” — remove",
+    "settings.secretUnset": "not set",
+    "settings.nothingToSave": "Nothing to save.",
+    "settings.nothing": "nothing",
+    "settings.saved": "Saved: {list}.{after}",
+    "settings.savedShort": "Saved.{after}",
+    "settings.restartHint": " Restart the bridge to apply: {list}.",
+    "field.wake.title": "Frame name (word stems, comma separated)",
+    "field.wake.note": "A spoken question without this word goes unanswered; a question by button does not.",
+    "field.llm_system.title": "Model system prompt",
+    "field.llm_system.note": "Empty — the default prompt from llm-local.py.",
+    "field.stt_prompt.title": "Recognition prompt",
+    "field.stt_prompt.note": "A phrase the recogniser assumes it has just heard: the frame's name and rare names. For example: «Рамка, покажи погоду в Эспоо, Хельсинки и Тампере». Applies from the next question.",
+    "field.llm_url.title": "Model address (chat completions)",
+    "field.token.title": "Frame key (Bearer)",
+    "field.ui_password.title": "Password of this page",
+    "field.ui_hosts.title": "Additional names of this bridge",
+    "field.ui_hosts.note": "Names the page opens under besides the IP and local names.",
+    "field.addr.title": "Address and port",
+    "field.stt.title": "Recognition",
+    "field.llm.title": "Model",
+    "field.tts.title": "Speech synthesis",
+    "error": "Error: {error}",
+  },
+  ru: {
+    "app.title": "Мост Easellet",
+    "app.tagline": "Рамки · плагины · ассистент · настройки",
+    "lang.label": "Язык интерфейса",
+    "nav.label": "Разделы",
+    "link.connecting": "связь…",
+    "link.online": "на связи · {uptime}",
+    "link.down": "нет связи",
+    "tab.frames": "Рамки",
+    "tab.plugins": "Плагины",
+    "tab.assistant": "Ассистент",
+    "tab.settings": "Настройки",
+    "uptime.s": "{n} с",
+    "uptime.min": "{n} мин",
+    "uptime.h": "{n} ч",
+    "frames.title": "Рамки",
+    "frames.scan": "Искать в сети",
+    "frames.searching": "ищу…",
+    "frames.count.one": "{count} рамка",
+    "frames.count.many": "{count} рамок",
+    "frames.failed": "Не удалось: {error}",
+    "frames.empty": "Рамок не найдено. Рамка на батарее спит и не отвечает; разбудите её кнопкой или добавьте по адресу.",
+    "frames.ago.never": "ещё не отвечала",
+    "frames.ago.online": "на связи",
+    "frames.ago.min": "видели {n} мин назад",
+    "frames.ago.hour": "видели {n} ч назад",
+    "frames.addTitle": "Добавить рамку по адресу",
+    "frames.host": "Адрес",
+    "frames.name": "название (необязательно)",
+    "frames.password": "пароль портала, если есть",
+    "frames.add": "Добавить",
+    "frames.addNote": "Для сетей, где поиск (mDNS) не доходит, и для рамок с паролем портала.",
+    "frames.adding": "Добавляю и проверяю…",
+    "frames.added": "Добавлена: {host}",
+    "frames.noMac": "без MAC",
+    "frames.found": "найдена в сети",
+    "frames.manual": "добавлена вручную",
+    "card.modeCover": "заполнить кадр",
+    "card.modeContain": "целиком",
+    "card.dither": "плавно",
+    "card.showNow": "Показать сейчас",
+    "card.saveGallery": "Сохранить в галерею",
+    "card.notPicture": "Не картинка: {error}",
+    "card.sending": "Отправляю…",
+    "card.saving": "Сохраняю…",
+    "card.gallery": "Галерея",
+    "card.removeFrame": "Убрать из списка",
+    "card.loading": "Загружаю…",
+    "card.galleryEmpty": "В галерее пусто.",
+    "card.galleryDown": "Галерея недоступна: {error}",
+    "card.showOne": "Показать",
+    "card.delete": "Удалить",
+    "card.confirm": "Точно?",
+    "note.summary": "Сообщение на рамку",
+    "note.title": "Заголовок",
+    "note.body": "Текст сообщения",
+    "note.defaultTitle": "Сообщение",
+    "note.preview": "Предпросмотр",
+    "note.show": "Показать на рамке",
+    "note.alt": "Как это покажет рамка",
+    "color.blue": "синий",
+    "color.red": "красный",
+    "color.green": "зелёный",
+    "color.yellow": "жёлтый",
+    "color.black": "чёрный",
+    "plugins.title": "Плагины",
+    "plugins.note": "Плагин — программа на машине моста: она решает, что показать, а мост рисует это для рамки. Добавить плагин можно только на самой машине (см. <code>bridge/plugins/README.md</code>); здесь их можно настроить, посмотреть и показать.",
+    "plugins.empty": "Плагинов нет. Каталоги: {dirs}",
+    "plugins.skipped": "Пропущены: {problems}",
+    "plugins.jump": "Перейти к плагину…",
+    "load.failed": "Не удалось загрузить: {error}",
+    "plugin.targetNone": "без рамки (только посмотреть)",
+    "plugin.preview": "Предпросмотр",
+    "plugin.show": "Показать на рамке",
+    "plugin.alt": "Как это покажет рамка",
+    "plugin.running": "Запускаю…",
+    "plugin.done": "Готово за {ms} мс",
+    "plugin.showing": "Запускаю и отправляю…",
+    "jobs.title": "Задания",
+    "jobs.note": "Задание запускает плагин по расписанию и отправляет результат рамкам. Неспящей рамке картинка приходит сразу; спящая (на батарее, с <code>bridge.url</code>) забирает её при следующем пробуждении. Одинаковая картинка второй раз не отправляется.",
+    "jobs.everyN": "каждые {n} мин",
+    "jobs.manual": "вручную",
+    "jobs.modeGallery": "в галерею",
+    "jobs.modeShow": "показ",
+    "jobs.priority": "приоритет {level}",
+    "jobs.disabled": "выключено",
+    "jobs.run": "Запустить сейчас",
+    "jobs.delete": "Удалить",
+    "jobs.confirm": "Точно?",
+    "jobs.running": "Запускаю…",
+    "jobs.noParams": "без параметров",
+    "jobs.empty": "Заданий пока нет: настройте плагин выше и сохраните его как задание.",
+    "jobs.scheduleSave": "Сохранить как задание",
+    "jobs.noFrames": "рамок пока нет",
+    "jobs.every.manual": "только вручную",
+    "jobs.every.15": "каждые 15 мин",
+    "jobs.every.30": "каждые 30 мин",
+    "jobs.every.hour": "каждый час",
+    "jobs.every.3h": "каждые 3 ч",
+    "jobs.every.6h": "каждые 6 ч",
+    "jobs.every.12h": "каждые 12 ч",
+    "jobs.every.day": "раз в сутки",
+    "jobs.mode.show": "показывать (не сохранять на рамке)",
+    "jobs.mode.gallery": "добавлять в галерею рамки",
+    "jobs.save": "Сохранить задание",
+    "jobs.saved": "Сохранено: {id}",
+    "runs.title": "Журнал",
+    "runs.ms": "{ms} мс",
+    "runs.empty": "Запусков пока не было.",
+    "results.shown": "показано",
+    "results.queued": "ждёт рамку",
+    "results.stored": "в галерее",
+    "results.unchanged": "без изменений",
+    "results.nothing new": "ничего нового",
+    "results.failed": "ошибка",
+    "sensors.battery": "батарея {percent}% ({volts} В)",
+    "sensors.charging": " · заряжается",
+    "sensors.usb": " · от USB",
+    "assistant.title": "Спросить ассистента",
+    "assistant.placeholder": "Например: сколько будет семь на восемь?",
+    "assistant.question": "Вопрос",
+    "assistant.ask": "Спросить",
+    "assistant.note": "Микрофон в браузере работает только по HTTPS или на localhost, поэтому здесь — текстом. Вопрос и ответ попадают в историю ниже (адрес «bridge-ui»).",
+    "assistant.thinking": "Думаю…",
+    "history.title": "Что спрашивали рамки",
+    "history.refresh": "Обновить",
+    "history.empty": "Пока ничего: спросите рамку.",
+    "history.emptyTurn": "(пусто)",
+    "history.trigger.key": "кнопка",
+    "history.trigger.voice": "голос",
+    "history.trigger.console": "консоль",
+    "history.trigger.text": "текст",
+    "history.stt": "распознавание {ms} мс",
+    "history.llm": "ответ {ms} мс",
+    "history.tts": "голос {ms} мс",
+    "settings.title": "Настройки моста",
+    "settings.save": "Сохранить",
+    "settings.reload": "Перечитать",
+    "settings.file": "Файл: {file}",
+    "settings.restartBadge": "после перезапуска",
+    "settings.pinnedBadge": "задано в командной строке",
+    "settings.secretSet": "задан; пусто — не менять, «-» — убрать",
+    "settings.secretUnset": "не задан",
+    "settings.nothingToSave": "Нечего сохранять.",
+    "settings.nothing": "ничего",
+    "settings.saved": "Сохранено: {list}.{after}",
+    "settings.savedShort": "Сохранено.{after}",
+    "settings.restartHint": " Перезапустите мост, чтобы применить: {list}.",
+    "field.wake.title": "Имя рамки (основы слов через запятую)",
+    "field.wake.note": "Голосовой вопрос без этого слова остаётся без ответа; вопрос по кнопке — нет.",
+    "field.llm_system.title": "Системная подсказка модели",
+    "field.llm_system.note": "Пусто — подсказка по умолчанию из llm-local.py.",
+    "field.stt_prompt.title": "Подсказка распознаванию",
+    "field.stt_prompt.note": "Фраза, которую распознавание считает только что услышанной: имя рамки и редкие названия. Например: «Рамка, покажи погоду в Эспоо, Хельсинки и Тампере». Действует со следующего вопроса.",
+    "field.llm_url.title": "Адрес модели (chat completions)",
+    "field.token.title": "Ключ рамок (Bearer)",
+    "field.ui_password.title": "Пароль этой страницы",
+    "field.ui_hosts.title": "Дополнительные имена этого моста",
+    "field.ui_hosts.note": "Имена, под которыми страница открывается кроме IP и локальных имён.",
+    "field.addr.title": "Адрес и порт",
+    "field.stt.title": "Распознавание",
+    "field.llm.title": "Модель",
+    "field.tts.title": "Синтез речи",
+    "error": "Ошибка: {error}",
+  },
+};
+
+const LANGUAGE_KEY = "easellet-bridge.lang";
+
+function storedLanguage() {
+  try {
+    return localStorage.getItem(LANGUAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+let language = STRINGS[storedLanguage()] ? storedLanguage() : "en";
+
+/// One string in the current language, `{name}` replaced from `vars`.
+function t(key, vars = {}) {
+  const text = STRINGS[language]?.[key] ?? STRINGS.en[key] ?? key;
+  return text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match));
+}
+
+/// `frames.count.one` and `.many`: the only place the interface needs a number
+/// to agree with a noun (Russian трёх форм здесь не нужно: «рамка/рамок»).
+function tCount(base, n, vars = {}) {
+  const one = language === "ru" ? n % 10 === 1 && n % 100 !== 11 : n === 1;
+  return t(`${base}.${one ? "one" : "many"}`, { ...vars, count: n, n });
+}
+
+function applyLanguage(next = language) {
+  language = STRINGS[next] ? next : "en";
+  try {
+    localStorage.setItem(LANGUAGE_KEY, language);
+  } catch {
+    // Nothing to persist to; the page still switches for this visit.
+  }
+  document.documentElement.lang = language;
+  for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+  for (const node of document.querySelectorAll("[data-i18n-html]")) node.innerHTML = t(node.dataset.i18nHtml);
+  for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+  for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
+  for (const node of document.querySelectorAll("[data-i18n-title]")) node.title = t(node.dataset.i18nTitle);
+  const picker = document.getElementById("ui-lang");
+  if (picker) picker.value = language;
+  window.dispatchEvent(new CustomEvent("easellet-language", { detail: language }));
+}
+
+for (const [code, name] of LANGUAGES) {
+  const option = document.createElement("option");
+  option.value = code;
+  option.textContent = name;
+  document.getElementById("ui-lang").append(option);
+}
+document.getElementById("ui-lang").addEventListener("change", (event) => applyLanguage(event.target.value));
+applyLanguage(language);
+</script>
+
 <script type="module" src="app.js"></script>
 </body>
 </html>

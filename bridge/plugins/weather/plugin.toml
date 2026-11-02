@@ -1,6 +1,7 @@
 name = "weather"
 title = "Погода"
 description = "Прогноз на несколько дней от Open-Meteo: без ключа и регистрации."
+i18n = { en = { title = "Weather", description = "A forecast for the next days from Open-Meteo: no key and no signup." } }
 run = "run.py"
 timeout_s = 20
 outputs = ["card"]
@@ -13,12 +14,14 @@ title = "Место"
 required = true
 default = "Хельсинки"
 note = "Название города или «широта,долгота», например 60.17,24.94."
+i18n = { en = { title = "Place", note = "A city name or «latitude,longitude», for example 60.17,24.94." } }
 
 [[param]]
 id = "days"
 type = "choice"
 title = "Дней"
 choices = ["3", "4", "5", "6"]
+i18n = { en = { title = "Days" } }
 default = "4"
 
 [[param]]
@@ -27,6 +30,7 @@ type = "text"
 title = "Вопрос"
 hidden = true
 note = "Заполняет ассистент: «покажи погоду в Эспоо» показывает Эспоо вместо места по умолчанию."
+i18n = { en = { title = "Question", note = "Filled by the assistant: «show the weather in Espoo» shows Espoo instead of the default place." } }
 
 [assistant]
 text_param = "question"

@@ -1,6 +1,7 @@
 name = "photo-folder"
 title = "Фото из папки"
 description = "По очереди показывает фотографии из папки на машине моста (JPEG и PNG)."
+i18n = { en = { title = "Photos from a folder", description = "Shows photographs from a folder on the bridge's machine in turn (JPEG and PNG)." } }
 run = "run.py"
 timeout_s = 20
 outputs = ["image", "none"]
@@ -12,12 +13,14 @@ type = "string"
 title = "Папка"
 required = true
 note = "Полный путь на машине моста, например /home/me/Pictures/frame."
+i18n = { en = { title = "Folder", note = "A full path on the bridge's machine, for example /home/me/Pictures/frame." } }
 
 [[param]]
 id = "order"
 type = "choice"
 title = "Порядок"
 choices = ["sequential", "random"]
+i18n = { en = { title = "Order" } }
 default = "sequential"
 
 [[param]]
@@ -25,4 +28,5 @@ id = "fit"
 type = "choice"
 title = "Кадрирование"
 choices = ["cover", "contain"]
+i18n = { en = { title = "Cropping" } }
 default = "cover"

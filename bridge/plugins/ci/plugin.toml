@@ -1,6 +1,7 @@
 name = "ci"
 title = "Пул-реквесты и проверки"
 description = "Последние открытые PR репозитория GitHub и сколько их проверок упало, идёт и прошло (GitHub Actions и внешние CI). Без изменений — без обновления рамки."
+i18n = { en = { title = "Pull requests and checks", description = "A repository's latest open GitHub PRs and how many of their checks failed, are running and passed (GitHub Actions and external CI). Unchanged — no frame update." } }
 run = "run.py"
 timeout_s = 40
 outputs = ["card", "none"]
@@ -12,18 +13,21 @@ type = "string"
 title = "Репозиторий"
 required = true
 note = "владелец/имя, например rust-lang/rust."
+i18n = { en = { title = "Repository", note = "owner/name, for example rust-lang/rust." } }
 
 [[param]]
 id = "base"
 type = "string"
 title = "Целевая ветка"
 note = "Только PR в эту ветку; пусто — все."
+i18n = { en = { title = "Target branch", note = "Only PRs into this branch; empty — all of them." } }
 
 [[param]]
 id = "count"
 type = "choice"
 title = "Сколько PR"
 choices = ["3", "4", "5", "6", "7"]
+i18n = { en = { title = "How many PRs" } }
 default = "6"
 
 [[param]]
@@ -32,9 +36,11 @@ type = "url"
 title = "Адрес API"
 default = "https://api.github.com"
 note = "Для GitHub Enterprise: https://<сервер>/api/v3."
+i18n = { en = { title = "API address", note = "For GitHub Enterprise: https://<server>/api/v3." } }
 
 [[param]]
 id = "token"
 type = "secret"
 title = "Токен GitHub"
 note = "Fine-grained, только чтение: Pull requests, Checks, Commit statuses. Без токена GitHub даёт 60 запросов в час, и за раз проверяются только 3 PR."
+i18n = { en = { title = "GitHub token", note = "Fine-grained, read-only: Pull requests, Checks, Commit statuses. Without a token GitHub allows 60 requests an hour, and only 3 PRs are checked per run." } }

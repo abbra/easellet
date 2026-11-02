@@ -1,6 +1,7 @@
 name = "news"
 title = "Новости"
 description = "Заголовки из ленты RSS или Atom. Если заголовки не изменились, рамка не обновляется."
+i18n = { en = { title = "News", description = "Headlines from an RSS or Atom feed. If the headlines did not change, the frame is not updated." } }
 run = "run.py"
 timeout_s = 20
 outputs = ["card", "none"]
@@ -11,6 +12,7 @@ id = "url"
 type = "url"
 title = "Адрес ленты"
 required = true
+i18n = { en = { title = "Feed address" } }
 default = "https://yle.fi/rss/uutiset/paauutiset"
 
 [[param]]
@@ -18,6 +20,7 @@ id = "count"
 type = "choice"
 title = "Сколько заголовков"
 choices = ["3", "4", "5", "6", "7"]
+i18n = { en = { title = "How many headlines" } }
 default = "6"
 
 [[param]]
@@ -25,3 +28,4 @@ id = "title"
 type = "string"
 title = "Заголовок карточки"
 note = "Пусто — название ленты."
+i18n = { en = { title = "Card heading", note = "Empty — the feed's own name." } }

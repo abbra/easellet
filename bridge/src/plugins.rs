@@ -12,7 +12,7 @@
 //! stdin, never as arguments or through a shell. The environment is cleared down
 //! to a few variables; every run gets its own scratch directory and a timeout.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -46,6 +46,22 @@ pub enum ParamKind {
     Url,
 }
 
+/// The same text in another language, under the manifest's `i18n` table.
+/// Authoring a plugin is authoring its words, so the words live in the
+/// manifest, not in the bridge's own web page: the interface picks the one
+/// matching its language and falls back to the authored text (`title`,
+/// `description`, `note`) when a translation is missing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Localized {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Param {
@@ -64,6 +80,9 @@ pub struct Param {
     /// Not shown in the web form: filled by the assistant (`text_param`).
     #[serde(default)]
     pub hidden: bool,
+    /// `title` and `note` in other languages, keyed by language tag.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub i18n: BTreeMap<String, Localized>,
 }
 
 /// What the voice assistant may call the plugin for (B6).
@@ -105,6 +124,9 @@ pub struct Manifest {
     pub params: Vec<Param>,
     #[serde(default)]
     pub assistant: Option<Assistant>,
+    /// `title` and `description` in other languages, keyed by language tag.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub i18n: BTreeMap<String, Localized>,
 }
 
 fn default_version() -> String {
@@ -647,7 +669,7 @@ mod tests {
             use std::sync::atomic::{AtomicU32, Ordering};
             static NEXT: AtomicU32 = AtomicU32::new(0);
             let root = std::env::temp_dir().join(format!(
-                "pf-plugin-test-{}-{}",
+                "easellet-plugin-test-{}-{}",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
@@ -790,6 +812,35 @@ default = "blue"
         assert!(
             plugins.is_empty() && problems[0].contains("inside"),
             "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_manifest_carries_its_words_in_other_languages() {
+        let manifest = MANIFEST
+            .replace(
+                "title = \"Echo\"",
+                "title = \"Эхо\"\ni18n = { en = { title = \"Echo\", description = \"Answers.\" } }",
+            )
+            .replace(
+                "title = \"Who\"",
+                "title = \"Кто\"\ni18n = { en = { title = \"Who\" } }",
+            );
+        let fixture = Fixture::new("echo", &manifest, "#!/bin/sh\n");
+        let (plugins, problems) = discover(&[fixture.root.clone()]);
+        assert!(problems.is_empty(), "{problems:?}");
+        let manifest = &plugins[0].manifest;
+        assert_eq!(manifest.i18n["en"].title, "Echo");
+        assert_eq!(manifest.i18n["en"].description, "Answers.");
+        assert_eq!(manifest.params[0].i18n["en"].title, "Who");
+        // What the web UI receives: the translation next to the authored text,
+        // with the fields a translation left alone omitted rather than empty.
+        let json = serde_json::to_value(manifest).unwrap();
+        assert_eq!(json["title"], "Эхо", "the authored text is still there");
+        assert_eq!(json["i18n"]["en"]["title"], "Echo");
+        assert!(
+            json["i18n"]["en"].get("note").is_none(),
+            "empty fields are left out"
         );
     }
 

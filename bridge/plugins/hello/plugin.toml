@@ -2,6 +2,7 @@
 name = "hello"
 title = "Привет"
 description = "Карточка с приветствием и временем. Пример плагина на Python."
+i18n = { en = { title = "Hello", description = "A greeting card with the time. An example plugin in Python." } }
 run = "run.py"
 timeout_s = 5
 outputs = ["card"]
@@ -11,6 +12,7 @@ id = "name"
 type = "string"
 title = "Кому"
 default = "семья"
+i18n = { en = { title = "For whom" } }
 
 [[param]]
 id = "accent"
@@ -18,3 +20,4 @@ type = "choice"
 title = "Цвет"
 choices = ["blue", "red", "green", "yellow", "black"]
 default = "green"
+i18n = { en = { title = "Colour" } }

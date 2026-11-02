@@ -43,8 +43,9 @@ function showTab() {
   }
   if (current === "frames") loadFrames();
   if (current === "plugins") {
-    loadPlugins();
-    loadJobs();
+    // The job list names a plugin by the title its manifest carries, so it waits
+    // for the plugin list instead of racing it to the render.
+    loadPlugins().then(loadJobs);
   }
   if (current === "assistant") loadHistory();
   if (current === "settings") loadSettings();
@@ -59,13 +60,13 @@ async function loadStatus() {
     if (!answer.ok) throw new Error(answer.status);
     const status = await answer.json();
     $("link-dot").className = "dot on";
-    $("link-text").textContent = `на связи · ${uptime(status.uptime_s)}`;
+    $("link-text").textContent = t("link.online", { uptime: uptime(status.uptime_s) });
     $("backends-chip").textContent =
       `${status.backends.stt} · ${short(status.backends.llm)} · ${short(status.backends.tts)}`;
     $("version").textContent = status.version;
   } catch {
     $("link-dot").className = "dot off";
-    $("link-text").textContent = "нет связи";
+    $("link-text").textContent = t("link.down");
   }
 }
 
@@ -75,32 +76,33 @@ function short(spec) {
 }
 
 function uptime(seconds) {
-  if (seconds < 120) return `${seconds} с`;
-  if (seconds < 7200) return `${Math.round(seconds / 60)} мин`;
-  return `${Math.round(seconds / 3600)} ч`;
+  if (seconds < 120) return t("uptime.s", { n: seconds });
+  if (seconds < 7200) return t("uptime.min", { n: Math.round(seconds / 60) });
+  return t("uptime.h", { n: Math.round(seconds / 3600) });
 }
 
 // ---- frames ----------------------------------------------------------------
 
 async function loadFrames(scan = false) {
-  $("frames-note").textContent = scan ? "ищу…" : "";
+  $("frames-note").textContent = scan ? t("frames.searching") : "";
   try {
     const answer = scan ? await postBytes("/api/frames/scan") : await fetch("/api/frames");
     if (!answer.ok) throw new Error((await answer.text()).trim());
     const { frames } = await answer.json();
     renderFrames(frames);
-    $("frames-note").textContent = `${frames.length} ${frames.length === 1 ? "рамка" : "рамок"}`;
+    if (!exposureDirty) loadExposure(frames);
+    $("frames-note").textContent = tCount("frames.count", frames.length);
   } catch (error) {
-    say("frames-message", `Не удалось: ${error.message}`, "bad");
+    say("frames-message", t("frames.failed", { error: error.message }), "bad");
     $("frames-note").textContent = "";
   }
 }
 
 function ago(seconds) {
-  if (seconds == null) return "ещё не отвечала";
-  if (seconds < 90) return "на связи";
-  if (seconds < 5400) return `видели ${Math.round(seconds / 60)} мин назад`;
-  return `видели ${Math.round(seconds / 3600)} ч назад`;
+  if (seconds == null) return t("frames.ago.never");
+  if (seconds < 90) return t("frames.ago.online");
+  if (seconds < 5400) return t("frames.ago.min", { n: Math.round(seconds / 60) });
+  return t("frames.ago.hour", { n: Math.round(seconds / 3600) });
 }
 
 // Frame cards are rebuilt on every scan, but an open gallery or a prepared
@@ -110,7 +112,7 @@ const cards = new Map();
 function renderFrames(frames) {
   const list = $("frame-list");
   if (!frames.length) {
-    list.replaceChildren(text("p", "Рамок не найдено. Рамка на батарее спит и не отвечает; разбудите её кнопкой или добавьте по адресу.", "empty"));
+    list.replaceChildren(text("p", t("frames.empty"), "empty"));
     cards.clear();
     return;
   }
@@ -154,15 +156,15 @@ function buildCard(initial) {
   file.type = "file";
   file.accept = "image/*";
   const mode = document.createElement("select");
-  mode.append(new Option("заполнить кадр", "cover"), new Option("целиком", "contain"));
+  mode.append(new Option(t("card.modeCover"), "cover"), new Option(t("card.modeContain"), "contain"));
   const dither = document.createElement("label");
   dither.className = "option";
   const ditherBox = document.createElement("input");
   ditherBox.type = "checkbox";
   ditherBox.checked = true;
-  dither.append(ditherBox, " плавно");
-  const show = text("button", "Показать сейчас", "primary");
-  const store = text("button", "Сохранить в галерею");
+  dither.append(ditherBox, ` ${t("card.dither")}`);
+  const show = text("button", t("card.showNow"), "primary");
+  const store = text("button", t("card.saveGallery"));
   show.disabled = store.disabled = true;
   const buttons = document.createElement("div");
   buttons.className = "row";
@@ -194,7 +196,7 @@ function buildCard(initial) {
       await prepare();
       message.textContent = "";
     } catch (error) {
-      message.textContent = `Не картинка: ${error.message}`;
+      message.textContent = t("card.notPicture", { error: error.message });
       message.className = "message bad";
     }
   });
@@ -204,7 +206,7 @@ function buildCard(initial) {
   async function deliver(action, button) {
     if (!packed) return;
     button.disabled = true;
-    message.textContent = action === "display" ? "Отправляю…" : "Сохраняю…";
+    message.textContent = action === "display" ? t("card.sending") : t("card.saving");
     message.className = "message";
     try {
       const answer = await postBytes(`/api/frames/${frame.id}/${action}`, packed);
@@ -223,8 +225,8 @@ function buildCard(initial) {
   store.addEventListener("click", () => deliver("upload", store));
 
   // The frame's gallery, through the bridge.
-  const galleryToggle = text("button", "Галерея");
-  const remove = text("button", "Убрать из списка", "danger");
+  const galleryToggle = text("button", t("card.gallery"));
+  const remove = text("button", t("card.removeFrame"), "danger");
   const gallery = document.createElement("div");
   gallery.className = "thumbs";
   gallery.hidden = true;
@@ -239,18 +241,18 @@ function buildCard(initial) {
   });
 
   async function loadGallery() {
-    gallery.replaceChildren(text("p", "Загружаю…", "empty"));
+    gallery.replaceChildren(text("p", t("card.loading"), "empty"));
     try {
       const answer = await fetch(`/api/frames/${frame.id}/gallery`);
       if (!answer.ok) throw new Error((await answer.text()).trim());
       const { images } = await answer.json();
       if (!images.length) {
-        gallery.replaceChildren(text("p", "В галерее пусто.", "empty"));
+        gallery.replaceChildren(text("p", t("card.galleryEmpty"), "empty"));
         return;
       }
       gallery.replaceChildren(...images.map(thumbnail));
     } catch (error) {
-      gallery.replaceChildren(text("p", `Галерея недоступна: ${error.message}`, "empty"));
+      gallery.replaceChildren(text("p", t("card.galleryDown", { error: error.message }), "empty"));
     }
   }
 
@@ -262,8 +264,8 @@ function buildCard(initial) {
     const name = image.name.split("/").pop();
     const line = document.createElement("div");
     line.className = "line";
-    const showIt = text("button", "Показать");
-    const deleteIt = text("button", "Удалить", "danger");
+    const showIt = text("button", t("card.showOne"));
+    const deleteIt = text("button", t("card.delete"), "danger");
     // The frame refuses deletion outside its writable directory anyway; the
     // button is only offered where it would succeed.
     deleteIt.hidden = !image.name.toUpperCase().startsWith("EASELTEST/");
@@ -286,10 +288,10 @@ function buildCard(initial) {
       // Two clicks, in place, as on the frame's page.
       if (!deleteIt.classList.contains("armed")) {
         deleteIt.classList.add("armed");
-        deleteIt.textContent = "Точно?";
+        deleteIt.textContent = t("card.confirm");
         setTimeout(() => {
           deleteIt.classList.remove("armed");
-          deleteIt.textContent = "Удалить";
+          deleteIt.textContent = t("card.delete");
         }, 4000);
         return;
       }
@@ -304,21 +306,21 @@ function buildCard(initial) {
   // A message card, drawn by the bridge in the panel's own colours.
   const note = document.createElement("details");
   note.className = "note-card";
-  const noteSummary = text("summary", "Сообщение на рамку");
+  const noteSummary = text("summary", t("note.summary"));
   const noteTitle = document.createElement("input");
   noteTitle.type = "text";
-  noteTitle.placeholder = "Заголовок";
+  noteTitle.placeholder = t("note.title");
   const noteBody = document.createElement("textarea");
-  noteBody.placeholder = "Текст сообщения";
+  noteBody.placeholder = t("note.body");
   const noteAccent = document.createElement("select");
-  for (const [value, label] of [["blue", "синий"], ["red", "красный"], ["green", "зелёный"], ["yellow", "жёлтый"], ["black", "чёрный"]]) {
-    noteAccent.append(new Option(label, value));
+  for (const value of ["blue", "red", "green", "yellow", "black"]) {
+    noteAccent.append(new Option(t(`color.${value}`), value));
   }
-  const notePreview = text("button", "Предпросмотр");
-  const noteShow = text("button", "Показать на рамке", "primary");
+  const notePreview = text("button", t("note.preview"));
+  const noteShow = text("button", t("note.show"), "primary");
   const noteImage = document.createElement("img");
   noteImage.className = "preview";
-  noteImage.alt = "Как это покажет рамка";
+  noteImage.alt = t("note.alt");
   noteImage.hidden = true;
   const noteMessage = text("p", "", "message");
   const noteButtons = document.createElement("div");
@@ -330,7 +332,7 @@ function buildCard(initial) {
   note.append(noteSummary, noteFields, noteImage);
   const card = () => ({
     layout: "notice",
-    title: noteTitle.value.trim() || "Сообщение",
+    title: noteTitle.value.trim() || t("note.defaultTitle"),
     body: noteBody.value,
     accent: noteAccent.value,
   });
@@ -348,7 +350,7 @@ function buildCard(initial) {
   });
   noteShow.addEventListener("click", async () => {
     noteShow.disabled = true;
-    noteMessage.textContent = "Отправляю…";
+    noteMessage.textContent = t("card.sending");
     noteMessage.className = "message";
     try {
       const answer = await post(`/api/frames/${frame.id}/card`, card());
@@ -366,13 +368,13 @@ function buildCard(initial) {
   function update(next) {
     frame = next;
     const title = document.createElement("div");
-    title.append(text("h3", frame.name), text("div", `${frame.host} · ${frame.mac ?? "без MAC"}${frame.firmware ? ` · fw ${frame.firmware}` : ""}`, "where"));
+    title.append(text("h3", frame.name), text("div", `${frame.host} · ${frame.mac ?? t("frames.noMac")}${frame.firmware ? ` · fw ${frame.firmware}` : ""}`, "where"));
     const state = document.createElement("div");
     state.className = "chips";
     const dot = document.createElement("span");
     dot.className = frame.online ? "dot on" : "dot off";
     const link = chip("", "");
-    link.append(dot, ` ${frame.online ? "на связи" : ago(frame.seen_s)}`);
+    link.append(dot, ` ${frame.online ? t("frames.ago.online") : ago(frame.seen_s)}`);
     state.append(link);
     header.replaceChildren(title, state);
 
@@ -380,15 +382,20 @@ function buildCard(initial) {
     const sensors = frame.sensors;
     if (sensors?.battery?.present) {
       const battery = sensors.battery;
-      const extra = battery.charging ? " · заряжается" : battery.usb ? " · от USB" : "";
-      parts.push(chip(`батарея ${battery.percent}% (${(battery.mv / 1000).toFixed(2)} В)${extra}`, battery.low ? "bad" : ""));
+      const extra = battery.charging ? t("sensors.charging") : battery.usb ? t("sensors.usb") : "";
+      parts.push(
+        chip(
+          t("sensors.battery", { percent: battery.percent, volts: (battery.mv / 1000).toFixed(2) }) + extra,
+          battery.low ? "bad" : "",
+        ),
+      );
     }
     if (sensors?.ambient) {
       parts.push(chip(`${Number(sensors.ambient.temp_c).toFixed(1)} °C · ${Math.round(sensors.ambient.rh_pct)}%`));
     }
     if (frame.panel) parts.push(chip(`${frame.panel.width}×${frame.panel.height}`));
-    if (frame.mdns) parts.push(chip("найдена в сети"));
-    if (frame.manual) parts.push(chip("добавлена вручную"));
+    if (frame.mdns) parts.push(chip(t("frames.found")));
+    if (frame.manual) parts.push(chip(t("frames.manual")));
     if (frame.error) parts.push(chip(frame.error, "bad"));
     chips.replaceChildren(...parts);
 
@@ -413,11 +420,11 @@ $("add-frame").addEventListener("click", async () => {
     password: $("add-password").value,
   };
   if (!request.host) return;
-  say("frames-message", "Добавляю и проверяю…", "");
+  say("frames-message", t("frames.adding"), "");
   const answer = await post("/api/frames/add", request);
   if (answer.ok) {
     renderFrames((await answer.json()).frames);
-    say("frames-message", `Добавлена: ${request.host}`, "ok");
+    say("frames-message", t("frames.added", { host: request.host }), "ok");
     $("add-host").value = $("add-name").value = $("add-password").value = "";
   } else {
     say("frames-message", (await answer.text()).trim(), "bad");
@@ -429,29 +436,67 @@ setInterval(() => {
 
 // ---- plugins ---------------------------------------------------------------
 
+/// What the manifests call themselves, filled by loadPlugins so the job list can
+/// name a plugin in the interface's language: a job stores the title its plugin
+/// had when it was saved, which is a snapshot, not a translation.
+const pluginTitles = new Map();
+
+/// A manifest carries its words in the interface's language under `i18n.<lang>`
+/// (`bridge/plugins/README.md`). Without a translation the authored text stands:
+/// a third-party plugin is at worst in its author's language, never blank.
+const localized = (object, field) => object?.i18n?.[language]?.[field] || object?.[field] || "";
+
+/// Which plugin is expanded. Kept outside the DOM because loadPlugins rebuilds
+/// every card — on a scan, on a language switch — and an accordion that forgets
+/// what it had open is worse than no accordion.
+let openPlugin = null;
+
 async function loadPlugins() {
   try {
     const [pluginAnswer, frameAnswer] = await Promise.all([fetch("/api/plugins"), fetch("/api/frames")]);
     if (!pluginAnswer.ok) throw new Error((await pluginAnswer.text()).trim());
     const { plugins, problems, dirs } = await pluginAnswer.json();
     const { frames } = frameAnswer.ok ? await frameAnswer.json() : { frames: [] };
+    // The jump selector is the short way in when eight closed sections are all
+    // on screen; it follows the accordion rather than duplicating its state.
+    const jump = $("plugin-jump");
+    jump.replaceChildren(new Option(t("plugins.jump"), ""));
+    pluginTitles.clear();
+    for (const plugin of plugins) {
+      const title = localized(plugin, "title");
+      pluginTitles.set(plugin.name, title);
+      jump.append(new Option(title, plugin.name));
+    }
+    jump.value = plugins.some((plugin) => plugin.name === openPlugin) ? openPlugin : "";
+    $("plugin-jump-row").hidden = plugins.length === 0;
     $("plugin-list").replaceChildren(
       ...(plugins.length
         ? plugins.map((plugin) => pluginCard(plugin, frames))
-        : [text("p", `Плагинов нет. Каталоги: ${dirs.join(", ")}`, "empty")]),
+        : [text("p", t("plugins.empty", { dirs: dirs.join(", ") }), "empty")]),
     );
-    $("plugin-problems").textContent = problems.length ? `Пропущены: ${problems.join("; ")}` : "";
+    $("plugin-problems").textContent = problems.length
+      ? t("plugins.skipped", { problems: problems.join("; ") })
+      : "";
   } catch (error) {
-    $("plugin-list").replaceChildren(text("p", `Не удалось загрузить: ${error.message}`, "empty"));
+    $("plugin-list").replaceChildren(text("p", t("load.failed", { error: error.message }), "empty"));
   }
 }
 
 function pluginCard(plugin, frames) {
-  const element = document.createElement("article");
+  // A closed section: eight plugins' worth of forms is a wall of fields, and
+  // the one being used is the one that should be on screen.
+  const element = document.createElement("details");
   element.className = "plugin";
-  const head = document.createElement("div");
-  head.append(text("h3", plugin.title), text("div", `${plugin.name} · ${plugin.dir}`, "where"));
-  if (plugin.description) head.append(text("p", plugin.description, "note"));
+  element.id = `plugin-${plugin.name}`;
+  const summary = document.createElement("summary");
+  summary.append(
+    text("span", localized(plugin, "title"), "title"),
+    text("span", `${plugin.name} · ${plugin.dir}`, "where"),
+  );
+  const inner = document.createElement("div");
+  inner.className = "plugin-inner";
+  const description = localized(plugin, "description");
+  if (description) inner.append(text("p", description, "note"));
 
   const form = document.createElement("div");
   form.className = "form";
@@ -459,7 +504,7 @@ function pluginCard(plugin, frames) {
   for (const param of (plugin.param ?? []).filter((param) => !param.hidden)) {
     const box = document.createElement("div");
     box.className = "field";
-    const label = text("label", param.title + (param.required ? " *" : ""));
+    const label = text("label", localized(param, "title") + (param.required ? " *" : ""));
     let input;
     if (param.type === "choice") {
       input = document.createElement("select");
@@ -481,14 +526,15 @@ function pluginCard(plugin, frames) {
     label.htmlFor = input.id;
     inputs[param.id] = input;
     box.append(label, input);
-    if (param.note) box.append(text("p", param.note, "note"));
+    const note = localized(param, "note");
+    if (note) box.append(text("p", note, "note"));
     form.append(box);
   }
   const target = document.createElement("select");
-  target.append(new Option("без рамки (только посмотреть)", ""));
+  target.append(new Option(t("plugin.targetNone"), ""));
   for (const frame of frames) target.append(new Option(`${frame.name} (${frame.host})`, frame.id));
-  const preview = text("button", "Предпросмотр");
-  const show = text("button", "Показать на рамке", "primary");
+  const preview = text("button", t("plugin.preview"));
+  const show = text("button", t("plugin.show"), "primary");
   const buttons = document.createElement("div");
   buttons.className = "row";
   buttons.append(target, preview, show);
@@ -496,7 +542,7 @@ function pluginCard(plugin, frames) {
   form.append(buttons, message);
   const image = document.createElement("img");
   image.className = "preview";
-  image.alt = "Как это покажет рамка";
+  image.alt = t("plugin.alt");
   image.hidden = true;
   const body = document.createElement("div");
   body.className = "body";
@@ -517,7 +563,7 @@ function pluginCard(plugin, frames) {
   target.addEventListener("change", () => busy(false));
   preview.addEventListener("click", async () => {
     busy(true);
-    message.textContent = "Запускаю…";
+    message.textContent = t("plugin.running");
     message.className = "message";
     try {
       const answer = await post(`/api/plugins/${plugin.name}/preview`, values());
@@ -525,7 +571,7 @@ function pluginCard(plugin, frames) {
         if (image.src) URL.revokeObjectURL(image.src);
         image.src = URL.createObjectURL(await answer.blob());
         image.hidden = false;
-        message.textContent = `Готово за ${answer.headers.get("X-Plugin-Ms") ?? "?"} мс`;
+        message.textContent = t("plugin.done", { ms: answer.headers.get("X-Plugin-Ms") ?? "?" });
         message.className = "message ok";
       } else {
         message.textContent = (await answer.text()).trim();
@@ -537,7 +583,7 @@ function pluginCard(plugin, frames) {
   });
   show.addEventListener("click", async () => {
     busy(true);
-    message.textContent = "Запускаю и отправляю…";
+    message.textContent = t("plugin.showing");
     message.className = "message";
     try {
       const answer = await post(`/api/plugins/${plugin.name}/show`, values());
@@ -550,7 +596,7 @@ function pluginCard(plugin, frames) {
   // Save the form as a job: which frames, how often, how.
   const schedule = document.createElement("details");
   schedule.className = "schedule";
-  schedule.append(text("summary", "Сохранить как задание"));
+  schedule.append(text("summary", t("jobs.scheduleSave")));
   const pick = document.createElement("div");
   pick.className = "frames-pick";
   const picks = frames.map((frame) => {
@@ -563,17 +609,19 @@ function pluginCard(plugin, frames) {
     pick.append(label);
     return box;
   });
-  if (!frames.length) pick.append(text("span", "рамок пока нет", "note"));
+  if (!frames.length) pick.append(text("span", t("jobs.noFrames"), "note"));
   const every = document.createElement("select");
-  for (const [minutes, label] of [[0, "только вручную"], [15, "каждые 15 мин"], [30, "каждые 30 мин"], [60, "каждый час"], [180, "каждые 3 ч"], [360, "каждые 6 ч"], [720, "каждые 12 ч"], [1440, "раз в сутки"]]) {
-    every.append(new Option(label, String(minutes)));
+  for (const [minutes, key] of [[0, "manual"], [15, "15"], [30, "30"], [60, "hour"], [180, "3h"], [360, "6h"], [720, "12h"], [1440, "day"]]) {
+    every.append(new Option(t(`jobs.every.${key}`), String(minutes)));
   }
   every.value = String({ "15m": 15, "30m": 30, "1h": 60, "3h": 180, "6h": 360, "12h": 720, "24h": 1440 }[plugin.default_every] ?? 60);
   const mode = document.createElement("select");
-  mode.append(new Option("показывать (не сохранять на рамке)", "show"), new Option("добавлять в галерею рамки", "gallery"));
+  mode.append(new Option(t("jobs.mode.show"), "show"), new Option(t("jobs.mode.gallery"), "gallery"));
   const priority = document.createElement("select");
-  for (let level = 0; level <= 9; level += 1) priority.append(new Option(`приоритет ${level}`, String(level)));
-  const saveJob = text("button", "Сохранить задание", "primary");
+  for (let level = 0; level <= 9; level += 1) {
+    priority.append(new Option(t("jobs.priority", { level }), String(level)));
+  }
+  const saveJob = text("button", t("jobs.save"), "primary");
   const scheduleRow = document.createElement("div");
   scheduleRow.className = "row";
   scheduleRow.append(every, mode, priority, saveJob);
@@ -590,20 +638,38 @@ function pluginCard(plugin, frames) {
       priority: Number(priority.value),
     };
     const answer = await post("/api/jobs/save", request);
-    scheduleMessage.textContent = answer.ok ? `Сохранено: ${(await answer.json()).id}` : (await answer.text()).trim();
+    scheduleMessage.textContent = answer.ok
+      ? t("jobs.saved", { id: (await answer.json()).id })
+      : (await answer.text()).trim();
     scheduleMessage.className = answer.ok ? "message ok" : "message bad";
     if (answer.ok) loadJobs();
   });
   form.append(schedule);
 
-  element.append(head, body);
+  // One open at a time: the point is that the page stays short enough to see
+  // the next plugin without scrolling past this one.
+  element.addEventListener("toggle", () => {
+    if (element.open) {
+      openPlugin = plugin.name;
+      for (const other of $("plugin-list").querySelectorAll("details.plugin")) {
+        if (other !== element) other.open = false;
+      }
+    } else if (openPlugin === plugin.name) {
+      openPlugin = null;
+    }
+    const jump = $("plugin-jump");
+    if (jump.value !== (openPlugin ?? "")) jump.value = openPlugin ?? "";
+  });
+  inner.append(body);
+
+  element.append(summary, inner);
+  element.open = plugin.name === openPlugin;
   return element;
 }
 
-const RESULTS = {
-  shown: "показано", queued: "ждёт рамку", stored: "в галерее", unchanged: "без изменений",
-  "nothing new": "ничего нового", failed: "ошибка",
-};
+/// Result words the bridge reports (`shown`, `queued`, …), translated at render
+/// time: the keys are the protocol's, not the interface's.
+const results = (result) => t(`results.${result}`);
 
 async function loadJobs() {
   try {
@@ -620,26 +686,31 @@ async function loadJobs() {
             const meta = document.createElement("div");
             meta.className = "meta";
             for (const part of [
-              job.every_min ? `каждые ${job.every_min} мин` : "вручную",
-              job.mode === "gallery" ? "в галерею" : "показ",
-              `приоритет ${job.priority}`,
-              job.enabled ? "" : "выключено",
+              job.every_min ? t("jobs.everyN", { n: job.every_min }) : t("jobs.manual"),
+              job.mode === "gallery" ? t("jobs.modeGallery") : t("jobs.modeShow"),
+              t("jobs.priority", { level: job.priority }),
+              job.enabled ? "" : t("jobs.disabled"),
             ]) if (part) meta.append(text("span", part));
             const params = Object.entries(job.params)
               .map(([key, value]) => `${key}=${value === true ? "•••" : value}`)
               .join(", ");
             const row = document.createElement("div");
             row.className = "row";
-            const runIt = text("button", "Запустить сейчас");
-            const remove = text("button", "Удалить", "danger");
+            const runIt = text("button", t("jobs.run"));
+            const remove = text("button", t("jobs.delete"), "danger");
             const message = text("p", "", "message");
             runIt.addEventListener("click", async () => {
               runIt.disabled = true;
-              message.textContent = "Запускаю…";
+              message.textContent = t("jobs.running");
               const answer = await post("/api/jobs/run", { id: job.id });
               if (answer.ok) {
                 const { runs: done } = await answer.json();
-                message.textContent = done.map((run) => `${run.frame}: ${RESULTS[run.result] ?? run.result}${run.message ? ` — ${run.message}` : ""}`).join("\n");
+                message.textContent = done
+                  .map(
+                    (run) =>
+                      `${run.frame}: ${results(run.result)}${run.message ? ` — ${run.message}` : ""}`,
+                  )
+                  .join("\n");
                 message.className = "message ok";
               } else {
                 message.textContent = (await answer.text()).trim();
@@ -651,7 +722,7 @@ async function loadJobs() {
             remove.addEventListener("click", async () => {
               if (!remove.classList.contains("armed")) {
                 remove.classList.add("armed");
-                remove.textContent = "Точно?";
+                remove.textContent = t("jobs.confirm");
                 return;
               }
               await post("/api/jobs/delete", { id: job.id });
@@ -660,14 +731,18 @@ async function loadJobs() {
             row.append(runIt, remove);
             item.append(
               meta,
-              text("div", `${job.title || job.plugin} → ${job.frames.map(nameOf).join(", ")}`, "heard"),
-              text("div", params || "без параметров", "answer"),
+              text(
+                "div",
+                `${pluginTitles.get(job.plugin) || job.title || job.plugin} → ${job.frames.map(nameOf).join(", ")}`,
+                "heard",
+              ),
+              text("div", params || t("jobs.noParams"), "answer"),
               row,
               message,
             );
             return item;
           })
-        : [text("p", "Заданий пока нет: настройте плагин выше и сохраните его как задание.", "empty")]),
+        : [text("p", t("jobs.empty"), "empty")]),
     );
     $("run-list").replaceChildren(
       ...(runs.length
@@ -676,27 +751,32 @@ async function loadJobs() {
             item.className = run.result === "failed" ? "turn rejected" : "turn";
             const meta = document.createElement("div");
             meta.className = "meta";
-            for (const part of [new Date(run.at_ms).toLocaleString(), run.plugin, run.frame, `${run.ms} мс`]) meta.append(text("span", part));
-            item.append(meta, text("div", RESULTS[run.result] ?? run.result, run.result === "failed" ? "why" : "heard"));
+            for (const part of [
+              new Date(run.at_ms).toLocaleString(),
+              run.plugin,
+              run.frame,
+              t("runs.ms", { ms: run.ms }),
+            ]) {
+              meta.append(text("span", part));
+            }
+            item.append(
+              meta,
+              text("div", results(run.result), run.result === "failed" ? "why" : "heard"),
+            );
             if (run.message) item.append(text("div", run.message, "answer"));
             return item;
           })
-        : [text("p", "Запусков пока не было.", "empty")]),
+        : [text("p", t("runs.empty"), "empty")]),
     );
   } catch (error) {
-    $("job-list").replaceChildren(text("p", `Не удалось загрузить: ${error.message}`, "empty"));
+    $("job-list").replaceChildren(text("p", t("load.failed", { error: error.message }), "empty"));
   }
 }
 
 // ---- assistant history -----------------------------------------------------
 
-const TRIGGERS = { key: "кнопка", voice: "голос", console: "консоль", "": "текст" };
-const REASONS = {
-  "stt: not addressed": "не обращались к рамке",
-  "stt: no speech": "не речь",
-  "stt: wake only": "только имя, ждём вопрос",
-};
-
+/// Trigger names the frame sends (`key`, `voice`, …), translated at render time.
+const trigger = (name) => t(`history.trigger.${name || "text"}`);
 async function loadHistory() {
   try {
     const answer = await fetch("/api/history?limit=100");
@@ -704,7 +784,7 @@ async function loadHistory() {
     const { turns } = await answer.json();
     renderTurns(turns);
   } catch (error) {
-    $("turns").replaceChildren(text("p", `Не удалось загрузить: ${error.message}`, "empty"));
+    $("turns").replaceChildren(text("p", t("load.failed", { error: error.message }), "empty"));
   }
 }
 
@@ -716,31 +796,28 @@ function text(tag, content, className) {
 }
 
 function renderTurns(turns) {
-  const showRejected = $("history-rejected").checked;
-  const shown = turns.filter((turn) => showRejected || !turn.rejected);
-  $("history-count").textContent = `${shown.length} из ${turns.length}`;
-  if (!shown.length) {
-    $("turns").replaceChildren(text("p", "Пока ничего: спросите рамку.", "empty"));
+  $("history-count").textContent = `${turns.length}`;
+  if (!turns.length) {
+    $("turns").replaceChildren(text("p", t("history.empty"), "empty"));
     return;
   }
   $("turns").replaceChildren(
-    ...shown.map((turn) => {
+    ...turns.map((turn) => {
       const item = document.createElement("article");
-      item.className = turn.rejected ? "turn rejected" : "turn";
+      item.className = "turn";
       const when = new Date(turn.at_ms).toLocaleString();
       const timings = [
-        turn.stt_ms != null && `распознавание ${turn.stt_ms} мс`,
-        turn.llm_ms != null && `ответ ${turn.llm_ms} мс`,
-        turn.tts_ms != null && `голос ${turn.tts_ms} мс`,
+        turn.stt_ms != null && t("history.stt", { ms: turn.stt_ms }),
+        turn.llm_ms != null && t("history.llm", { ms: turn.llm_ms }),
+        turn.tts_ms != null && t("history.tts", { ms: turn.tts_ms }),
       ].filter(Boolean);
       const meta = document.createElement("div");
       meta.className = "meta";
-      for (const part of [when, turn.peer, TRIGGERS[turn.trigger] ?? turn.trigger, ...timings]) {
+      for (const part of [when, turn.peer, trigger(turn.trigger), ...timings]) {
         if (part) meta.append(text("span", part));
       }
       item.append(meta);
-      if (turn.heard != null) item.append(text("div", turn.heard || "(пусто)", "heard"));
-      if (turn.rejected) item.append(text("div", REASONS[turn.rejected] ?? turn.rejected, "why"));
+      if (turn.heard != null) item.append(text("div", turn.heard || t("history.emptyTurn"), "heard"));
       if (turn.answer) item.append(text("div", turn.answer, "answer"));
       if (turn.error) item.append(text("div", turn.error, "why"));
       return item;
@@ -752,7 +829,7 @@ async function ask() {
   const question = $("ask-text").value.trim();
   if (!question) return;
   $("ask-send").disabled = true;
-  say("ask-answer", "Думаю…", "");
+  say("ask-answer", t("assistant.thinking"), "");
   $("ask-audio").hidden = true;
   try {
     const answer = await post("/api/assistant/ask", { text: question });
@@ -777,7 +854,6 @@ $("ask-text").addEventListener("keydown", (event) => {
 });
 
 $("history-refresh").addEventListener("click", loadHistory);
-$("history-rejected").addEventListener("change", loadHistory);
 setInterval(() => {
   if (!$("tab-assistant").hidden && document.visibilityState === "visible") loadHistory();
 }, 5000);
@@ -785,22 +861,20 @@ setInterval(() => {
 // ---- settings --------------------------------------------------------------
 
 // How each key is edited, in the order the form shows them.
+// Titles and notes come from STRINGS (`field.<key>.title` / `.note`) so the
+// form is translated with the rest of the page; the structure here is the form.
 const FIELDS = [
-  { key: "wake", title: "Имя рамки (основы слов через запятую)", kind: "list",
-    note: "Голосовой вопрос без этого слова остаётся без ответа; вопрос по кнопке — нет." },
-  { key: "llm_system", title: "Системная подсказка модели", kind: "textarea",
-    note: "Пусто — подсказка по умолчанию из llm-local.py." },
-  { key: "stt_prompt", title: "Подсказка распознаванию", kind: "textarea",
-    note: "Фраза, которую распознавание считает только что услышанной: имя рамки и редкие названия. Например: «Рамка, покажи погоду в Эспоо, Хельсинки и Тампере». Действует со следующего вопроса." },
-  { key: "llm_url", title: "Адрес модели (chat completions)", kind: "text" },
-  { key: "token", title: "Ключ рамок (Bearer)", kind: "secret" },
-  { key: "ui_password", title: "Пароль этой страницы", kind: "secret" },
-  { key: "ui_hosts", title: "Дополнительные имена этого моста", kind: "list",
-    note: "Имена, под которыми страница открывается кроме IP и локальных имён." },
-  { key: "addr", title: "Адрес и порт", kind: "text" },
-  { key: "stt", title: "Распознавание", kind: "text" },
-  { key: "llm", title: "Модель", kind: "text" },
-  { key: "tts", title: "Синтез речи", kind: "text" },
+  { key: "wake", kind: "list" },
+  { key: "llm_system", kind: "textarea" },
+  { key: "stt_prompt", kind: "textarea" },
+  { key: "llm_url", kind: "text" },
+  { key: "token", kind: "secret" },
+  { key: "ui_password", kind: "secret" },
+  { key: "ui_hosts", kind: "list" },
+  { key: "addr", kind: "text" },
+  { key: "stt", kind: "text" },
+  { key: "llm", kind: "text" },
+  { key: "tts", kind: "text" },
 ];
 
 let loaded = null;
@@ -811,10 +885,10 @@ async function loadSettings() {
     if (!answer.ok) throw new Error(await answer.text());
     loaded = await answer.json();
     renderSettings(loaded);
-    $("settings-file").textContent = `Файл: ${loaded.file}`;
+    $("settings-file").textContent = t("settings.file", { file: loaded.file });
     say("settings-message", "", "");
   } catch (error) {
-    say("settings-message", `Не удалось загрузить: ${error.message}`, "bad");
+    say("settings-message", t("load.failed", { error: error.message }), "bad");
   }
 }
 
@@ -824,10 +898,10 @@ function renderSettings({ values, pinned, restart }) {
     ...FIELDS.map((field) => {
       const box = document.createElement("div");
       box.className = "field";
-      const label = text("label", field.title);
+      const label = text("label", t(`field.${field.key}.title`));
       label.htmlFor = `setting-${field.key}`;
-      if (restart.includes(field.key)) label.append(text("span", "после перезапуска", "badge"));
-      if (pinned.includes(field.key)) label.append(text("span", "задано в командной строке", "badge warn"));
+      if (restart.includes(field.key)) label.append(text("span", t("settings.restartBadge"), "badge"));
+      if (pinned.includes(field.key)) label.append(text("span", t("settings.pinnedBadge"), "badge warn"));
       let input;
       if (field.kind === "textarea") {
         input = document.createElement("textarea");
@@ -837,7 +911,7 @@ function renderSettings({ values, pinned, restart }) {
         input.type = field.kind === "secret" ? "password" : "text";
         if (field.kind === "secret") {
           // The value never comes back from the bridge: empty keeps it, "-" clears.
-          input.placeholder = values[field.key] ? "задан; пусто — не менять, «-» — убрать" : "не задан";
+          input.placeholder = values[field.key] ? t("settings.secretSet") : t("settings.secretUnset");
         } else if (field.kind === "list") {
           input.value = (values[field.key] ?? []).join(", ");
         } else {
@@ -848,7 +922,8 @@ function renderSettings({ values, pinned, restart }) {
       input.dataset.key = field.key;
       input.disabled = pinned.includes(field.key);
       box.append(label, input);
-      if (field.note) box.append(text("p", field.note, "note"));
+      const note = t(`field.${field.key}.note`);
+      if (note !== `field.${field.key}.note`) box.append(text("p", note, "note"));
       return box;
     }),
   );
@@ -874,7 +949,7 @@ function changes() {
 $("settings-save").addEventListener("click", async () => {
   const change = changes();
   if (!Object.keys(change).length) {
-    say("settings-message", "Нечего сохранять.", "");
+    say("settings-message", t("settings.nothingToSave"), "");
     return;
   }
   try {
@@ -882,10 +957,14 @@ $("settings-save").addEventListener("click", async () => {
     const body = await answer.text();
     if (!answer.ok) throw new Error(body.trim());
     const { changed, restart } = JSON.parse(body);
-    const after = restart.length ? ` Перезапустите мост, чтобы применить: ${restart.join(", ")}.` : "";
-    say("settings-message", `Сохранено: ${changed.join(", ") || "ничего"}.${after}`, "ok");
+    const after = restart.length ? t("settings.restartHint", { list: restart.join(", ") }) : "";
+    say(
+      "settings-message",
+      t("settings.saved", { list: changed.join(", ") || t("settings.nothing"), after }),
+      "ok",
+    );
     await loadSettings();
-    if (restart.length) say("settings-message", `Сохранено.${after}`, "ok");
+    if (restart.length) say("settings-message", t("settings.savedShort", { after }), "ok");
     loadStatus();
   } catch (error) {
     say("settings-message", error.message, "bad");
@@ -894,6 +973,26 @@ $("settings-save").addEventListener("click", async () => {
 $("settings-reload").addEventListener("click", loadSettings);
 
 // ---- start -----------------------------------------------------------------
+
+// The cards, the job list and the settings form are built nodes, not markup, so
+// a language switch rebuilds them from the same API instead of patching text:
+// the card map is dropped and the current tab reloads itself.
+addEventListener("easellet-language", () => {
+  cards.clear();
+  loadStatus();
+  showTab();
+});
+
+// Jump to a plugin: open it, then bring it to the top of the screen. The select
+// then keeps showing which section is open, so it doubles as a state indicator.
+$("plugin-jump").addEventListener("change", (event) => {
+  const name = event.target.value;
+  if (!name) return;
+  const card = document.getElementById(`plugin-${name}`);
+  if (!card) return;
+  card.open = true;
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 loadStatus();
 setInterval(loadStatus, 30000);
