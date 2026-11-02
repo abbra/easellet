@@ -1,0 +1,64 @@
+# The main loop runs on this task. `info` reported main_stack_min_free=932 of
+# 8192 after a slideshow session with the voice watcher on (2026-11-02), so it
+# gets 4 KB more; internal RAM had 58 KB free at its lowest.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
+CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=4096
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=4096
+
+# Conservative flash settings; module is N16R8 (quad flash, octal PSRAM).
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_40M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_SPIRAM_MEMTEST=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=n
+
+# HAL owns USB serial, no competing stdio/logger driver.
+CONFIG_ESP_CONSOLE_NONE=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_LOG_DEFAULT_LEVEL_NONE=y
+CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
+
+# This diagnostic image never initializes NVS: Wi-Fi keeps its configuration in
+# RAM, and RF calibration is recomputed each boot instead of being cached in NVS.
+# That keeps the radio from writing flash. No automatic sleep either.
+CONFIG_PM_ENABLE=n
+CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE=n
+
+# Wi-Fi and lwIP do not fit in the 1 MiB single-app factory partition, so the
+# larger single-app layout (1.5 MiB factory, same 0x10000 offset) is used.
+# esp-idf-sys does not support CONFIG_PARTITION_TABLE_CUSTOM: it resolves a custom
+# CSV against its own generated project directory, not against this one.
+CONFIG_PARTITION_TABLE_SINGLE_APP=n
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# The assistant talks to a LAN bridge over plain HTTP. HTTPS stays compiled out,
+# so a https:// ai.url fails loudly instead of pulling a certificate bundle and a
+# TLS stack into a firmware whose whole point is that it has neither.
+CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS=n
+
+# Image size (research/size-optimization.md, measured 2026-11-02). The frame only
+# joins as a station with WPA2/WPA3-personal over IPv4, so these features are dead
+# weight: Enterprise/EAP pulls in a TLS client and X.509.
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+# LWIP_DHCPS stays on: esp-idf-svc's netif code references esp_netif_dhcps_option,
+# which only links without the DHCP server when LTO happens to drop the caller.
+# Nothing uses IPv6 (-25 KB). An earlier test blamed IPv6=n for lost multicast;
+# the real cause was Wi-Fi modem sleep, now off while the servers run (net.rs).
+CONFIG_LWIP_IPV6=n
+# Asserts still check and abort; they drop file/line/expression strings that the
+# compiled-out console could never show (~50 KB).
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+# Rust does not use C printf and IDF logging is off; nano drops float formatting.
+CONFIG_LIBC_NEWLIB_NANO_FORMAT=y
+# Nothing uses TLS, but esp_http_client links the esp-tls client, so TLS cannot
+# be disabled outright; the server side and the CA bundle can.
+CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
+# ESP_ERR_TO_NAME_LOOKUP stays on: console errors keep their names (8 KB).

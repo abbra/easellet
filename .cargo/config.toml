@@ -1,0 +1,24 @@
+[build]
+target = "xtensa-esp32s3-espidf"
+
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+# `immediate-abort` traps on a panic without formatting a message: the console is
+# compiled out, so the message was never seen, and the chip restarts either way.
+# Saves ~35 KB (research/size-optimization.md). Nightly-only; recheck on toolchain
+# upgrades.
+rustflags = ["--cfg", "espidf_time64", "-Zunstable-options", "-Cpanic=immediate-abort"]
+
+[unstable]
+build-std = ["std", "panic_abort"]
+# Replaces Cargo's default std features (`backtrace`, `panic-unwind`): the backtrace
+# symbolizer (gimli, addr2line, rustc-demangle) cost ~134 KB and had no console to
+# print to. `optimize_for_size` picks the smaller std algorithms (~5 KB).
+build-std-features = ["optimize_for_size"]
+
+[env]
+# ldproxy's informational stderr otherwise triggers Rust's linker_messages lint.
+LDPROXY_LOG = "warn"
+MCU = "esp32s3"
+ESP_IDF_VERSION = "v5.5.5"
+ESP_IDF_TOOLS_INSTALL_DIR = "workspace"
