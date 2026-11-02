@@ -513,6 +513,13 @@ impl Bridge {
                     response.headers.push(("X-Panel", "keep".to_owned()));
                     return response;
                 }
+                // One operation over two numbers is computed here: a model's wrong
+                // number sounds exactly like a right one. The wake word is stripped
+                // first, so «Рамка, сколько будет …» reaches the calculator too.
+                if let Some(reply) = crate::arithmetic::answer(&self.without_wake(&prompt)) {
+                    eprintln!("  arithmetic: exact answer, no model");
+                    return Response::text(200, reply);
+                }
                 match self.llm.reply(&prompt, model) {
                     Ok(text) => Response::text(200, text),
                     Err(error) => Response::text(500, format!("ERR llm: {error}\n")),

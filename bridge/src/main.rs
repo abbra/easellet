@@ -5,6 +5,7 @@
 //! and a real filesystem. See `README.md` for the wire format and `../TODO.md` for why
 //! the pipeline lives here rather than in the cloud.
 
+mod arithmetic;
 mod backends;
 mod commands;
 mod frames;
