@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<title>Фоторамка</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f7;
+    --card: #fff;
+    --ink: #16181d;
+    --muted: #6b7280;
+    --line: #e3e4e8;
+    --accent: #2f6df6;
+    --accent-ink: #fff;
+    --ok: #12805c;
+    --bad: #b42318;
+    --radius: 16px;
+    --shadow: 0 1px 2px rgba(16, 18, 23, .06), 0 8px 24px rgba(16, 18, 23, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1013;
+      --card: #171a1f;
+      --ink: #f2f3f5;
+      --muted: #9aa1ac;
+      --line: #262b33;
+      --accent: #6f9cff;
+      --accent-ink: #0e1013;
+      --ok: #4ade80;
+      --bad: #ff8b7e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .35);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 62rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  header.top { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: baseline; justify-content: space-between; margin-bottom: 1.25rem; }
+  h1 { font-size: 1.5rem; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+  h1 small { display: block; font-size: .85rem; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-top: .2rem; }
+  .chips { display: flex; gap: .5rem; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .8rem; color: var(--muted);
+    border: 1px solid var(--line); background: var(--card);
+    border-radius: 999px; padding: .3rem .7rem;
+  }
+  .chip.bad { color: var(--bad); border-color: var(--bad); }
+  .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: var(--bad); }
+
+  /* Tabs: photos and gallery are what a person in the room uses; everything
+     that reconfigures the device lives behind the third one. */
+  nav.tabs {
+    display: flex; gap: .25rem; padding: .25rem; margin-bottom: 1.25rem;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; box-shadow: var(--shadow); overflow-x: auto;
+  }
+  nav.tabs a {
+    flex: 1 1 auto; text-align: center; white-space: nowrap;
+    padding: .6rem .9rem; border-radius: 9px; text-decoration: none;
+    color: var(--muted); font-size: .92rem; font-weight: 550;
+    display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+  }
+  nav.tabs a:hover { color: var(--ink); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  nav.tabs a[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+  nav.tabs a .count {
+    font-size: .75rem; font-variant-numeric: tabular-nums; opacity: .8;
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    border-radius: 999px; padding: 0 .4rem;
+  }
+  nav.tabs a[aria-selected="true"] .count { opacity: .95; }
+
+  section.card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1.25rem; margin-bottom: 1.25rem;
+  }
+  .card > h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 1rem; font-weight: 600; }
+  .split { display: grid; gap: 1.25rem; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 780px) { .split { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); } }
+  .drop {
+    display: grid; place-items: center; gap: .35rem; text-align: center;
+    border: 1.5px dashed var(--line); border-radius: 12px; padding: 1.75rem 1rem;
+    color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop strong { color: var(--ink); font-weight: 550; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  canvas {
+    display: block; width: 100%; height: auto; aspect-ratio: 800 / 480;
+    border-radius: 10px; border: 1px solid var(--line); background: #fff;
+  }
+  .frames { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  figure.frame {
+    margin: 0; display: flex; flex-direction: column; gap: .45rem;
+    position: relative; padding: .4rem; border-radius: 12px;
+    border: 1px solid transparent;
+  }
+  figure.frame:hover { border-color: var(--line); }
+  figure.frame.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  figure.frame figcaption { display: flex; flex-direction: column; gap: .35rem; font-size: .78rem; color: var(--muted); }
+  figure.frame .line { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+  figure.frame .line.top { justify-content: flex-start; }
+  figure.frame .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* The checkbox sits with the name rather than on the picture: a control on
+     top of the image hides exactly the part being judged. */
+  figure.frame .pick { width: 1rem; height: 1rem; cursor: pointer; accent-color: var(--accent); flex: 0 0 auto; }
+  figure.frame .trash {
+    background: transparent; border-color: transparent; color: var(--muted);
+    padding: .25rem .45rem; font-size: .8rem;
+  }
+  figure.frame .trash:hover:not([disabled]) { color: var(--bad); border-color: var(--line); }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1 1 auto; }
+  button {
+    font: inherit; font-size: .9rem; font-weight: 550;
+    padding: .55rem 1rem; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    transition: background .15s, border-color .15s, opacity .15s;
+  }
+  button:hover:not([disabled]) { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover:not([disabled]) { background: color-mix(in srgb, var(--accent) 88%, #000); }
+  button.danger:hover:not([disabled]) { border-color: var(--bad); color: var(--bad); }
+  /* Deleting asks twice, in place: a modal for "are you sure" is the one dialog
+     everybody dismisses without reading. */
+  button.armed, button.armed:hover:not([disabled]) {
+    background: var(--bad); border-color: var(--bad); color: #fff;
+  }
+  button.small { padding: .3rem .6rem; font-size: .78rem; }
+  button[disabled] { opacity: .45; cursor: default; }
+  label.option { display: inline-flex; gap: .4rem; align-items: center; font-size: .85rem; color: var(--muted); cursor: pointer; }
+  .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+  .toolbar input[type="search"] {
+    font: inherit; font-size: .9rem; padding: .5rem .65rem; border-radius: 9px;
+    color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+    min-width: 12rem; flex: 1 1 12rem;
+  }
+  .pager { display: flex; gap: .5rem; align-items: center; justify-content: center; margin-top: 1.25rem; font-size: .85rem; color: var(--muted); }
+  .pager span { font-variant-numeric: tabular-nums; }
+  form.settings { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem 1rem; margin: 0; min-width: 0; }
+  legend { font-size: .75rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 0 .35rem; }
+  .field { display: grid; gap: .25rem; margin-bottom: .75rem; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { font-size: .78rem; color: var(--muted); }
+  input[type="text"], input[type="password"], input[type="number"], select {
+    font: inherit; font-size: .9rem; width: 100%;
+    padding: .5rem .65rem; border-radius: 9px; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line);
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible, .drop:focus-visible, nav.tabs a:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  input::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+  /* A note that sits between two fields needs air underneath too: margins do not
+     collapse here, and a label glued to the last line reads as part of the note. */
+  .note { font-size: .8rem; color: var(--muted); margin: .6rem 0 .9rem; }
+  .note:last-child { margin-bottom: 0; }
+  .message { font-size: .85rem; white-space: pre-wrap; margin: .8rem 0 0; }
+  .message.ok { color: var(--ok); }
+  .message.bad { color: var(--bad); }
+  .empty { color: var(--muted); font-size: .9rem; padding: .5rem 0; }
+  main > section[hidden] { display: none; }
+  footer { color: var(--muted); font-size: .78rem; text-align: center; margin-top: 2rem; }
+  code { font: .85em ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+
+<main>
+  <header class="top">
+    <h1>Фоторамка <small>Отправить фотографию · посмотреть галерею · настроить</small></h1>
+    <div class="chips">
+      <span class="chip"><span class="dot" id="link-dot"></span><span id="link-text">связь…</span></span>
+      <span class="chip" id="gallery-chip">галерея…</span>
+      <span class="chip" id="battery-chip" hidden></span>
+      <span class="chip" id="climate-chip" hidden></span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Разделы">
+    <a href="#photos" role="tab" id="tab-link-photos" aria-selected="true" aria-controls="tab-photos">Фотография</a>
+    <a href="#gallery" role="tab" id="tab-link-gallery" aria-selected="false" aria-controls="tab-gallery">
+      Галерея <span class="count" id="tab-count" hidden>0</span>
+    </a>
+    <a href="#settings" role="tab" id="tab-link-settings" aria-selected="false" aria-controls="tab-settings">Настройки</a>
+  </nav>
+
+  <section class="card" id="tab-photos" role="tabpanel" aria-labelledby="tab-link-photos">
+    <h2>Отправить фотографию</h2>
+    <div class="split">
+      <div>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать фотографию">
+          <strong>Выберите фотографию</strong>
+          <span>перетащите её сюда или нажмите</span>
+          <input id="file" type="file" accept="image/*" hidden>
+        </div>
+        <div class="row" style="margin-top:.9rem">
+          <label class="option"><input type="radio" name="mode" value="cover" checked> заполнить</label>
+          <label class="option"><input type="radio" name="mode" value="contain"> целиком</label>
+          <label class="option"><input type="checkbox" id="dither" checked> плавно</label>
+        </div>
+        <p class="note">
+          Картинка уменьшается до 800×480 и переводится в шесть цветов экрана в
+          браузере: на рамку уходят готовые 192 000 байт.
+        </p>
+        <div class="row" style="margin-top:.9rem">
+          <button class="primary grow" id="send" disabled>Отправить на рамку</button>
+        </div>
+        <p class="message" id="upload-message"></p>
+      </div>
+      <div>
+        <canvas id="preview" width="800" height="480" aria-label="предпросмотр"></canvas>
+        <p class="note" id="preview-note">Выберите картинку — здесь появится именно то, что покажет рамка.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="tab-gallery" role="tabpanel" aria-labelledby="tab-link-gallery" hidden>
+    <h2>На рамке</h2>
+    <div class="toolbar">
+      <input id="gallery-search" type="search" placeholder="Поиск по имени файла" aria-label="Поиск по имени файла">
+      <button class="small" id="gallery-refresh">Обновить</button>
+      <button class="small danger" id="gallery-remove" disabled>Удалить выбранные</button>
+      <label class="option" style="margin-left:auto"><input type="checkbox" id="gallery-select-page"> выбрать страницу</label>
+    </div>
+    <div class="frames" id="frames"></div>
+    <p class="empty" id="frames-empty">Читаю карточку…</p>
+    <div class="pager" id="pager" hidden>
+      <button class="small" id="page-prev">‹ Назад</button>
+      <span id="page-label">1 / 1</span>
+      <button class="small" id="page-next">Вперёд ›</button>
+    </div>
+    <p class="message" id="gallery-message"></p>
+  </section>
+
+  <section class="card" id="tab-settings" role="tabpanel" aria-labelledby="tab-link-settings" hidden>
+    <h2>Настройки устройства</h2>
+    <p class="note" style="margin:0 0 1rem">
+      Это административная часть: значения здесь действуют на рамку для всех, кто
+      её видит. Фотографии и галерея от них не зависят.
+    </p>
+    <form class="settings" id="settings">
+      <fieldset>
+        <legend>Wi-Fi</legend>
+        <div class="field"><label for="wifi-ssid">Сеть</label><input id="wifi-ssid" name="wifi.ssid" type="text" autocomplete="off"></div>
+        <div class="field"><label for="wifi-password">Пароль</label><input id="wifi-password" name="wifi.password" type="password" autocomplete="new-password" placeholder="оставьте пустым, чтобы не менять"></div>
+        <label class="option"><input type="checkbox" name="wifi.auto" id="wifi-auto"> подключаться при включении</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Звук</legend>
+        <div class="field"><label for="audio-volume">Громкость, дБ</label><input id="audio-volume" name="audio.volume_db" type="number" step="0.5" placeholder="по умолчанию"></div>
+        <div class="field"><label for="audio-gain">Усиление микрофона, дБ</label><input id="audio-gain" name="audio.gain_db" type="number" step="0.5" placeholder="по умолчанию"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Ответы</legend>
+        <div class="field"><label for="ai-url">Мост, URL</label><input id="ai-url" name="ai.url" type="text" placeholder="http://192.168.50.93:8095"></div>
+        <div class="field"><label for="ai-key">Токен моста</label><input id="ai-key" name="ai.key" type="password" autocomplete="off" placeholder="оставьте пустым, чтобы не менять"></div>
+        <!-- The four languages the bridge's recogniser is allowed to pick
+             (`PF_STT_LANGS=ru,en,fi,fr` in bridge/src/whisper.rs). Offering a
+             language the bridge does not hear would be a promise the frame
+             cannot keep; a tag outside this list still round-trips. -->
+        <div class="field"><label for="ai-lang">Язык</label>
+          <select id="ai-lang" name="ai.lang">
+            <option value="ru-RU">Русский</option>
+            <option value="en-US">English</option>
+            <option value="fi-FI">Suomi</option>
+            <option value="fr-FR">Français</option>
+          </select>
+        </div>
+        <p class="note">
+          Те же четыре языка, что понимает мост: русский, английский, финский,
+          французский. Рамка отвечает на языке вопроса; эта настройка — язык,
+          на котором она слушает и говорит, когда по тексту его не определить.
+        </p>
+        <div class="field"><label for="ai-idle">Слушать голос</label>
+          <select id="ai-idle" name="ai.idle">
+            <option value="off">выключено</option>
+            <option value="key">по кнопке</option>
+            <option value="voice">по голосу</option>
+          </select>
+        </div>
+        <div class="field"><label for="ai-threshold">Порог голоса</label><input id="ai-threshold" name="ai.threshold" type="number" step="10" placeholder="по умолчанию"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Слайд-шоу</legend>
+        <div class="field"><label for="gallery-dir">Папка на карте</label><input id="gallery-dir" name="gallery.dir" type="text" placeholder="PFTEST/UPLOADS"></div>
+        <div class="field"><label for="gallery-secs">Интервал, сек</label><input id="gallery-secs" name="gallery.secs" type="number" step="30" min="120" max="3600" placeholder="300"></div>
+        <label class="option"><input type="checkbox" name="gallery.auto" id="gallery-auto"> показывать при включении</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Защита устройства</legend>
+        <div class="field"><label for="web-password">Пароль страницы</label><input id="web-password" name="web.password" type="password" autocomplete="new-password" placeholder="пусто — не менять, «-» — убрать"></div>
+        <p class="note">
+          Пока страница открыта всем в домашней сети. Пароль включает вход по
+          HTTP Basic — это замок на дверь, а не шифрование: трафик идёт по
+          обычному HTTP. Новый пароль начнёт действовать после <code>web stop</code>
+          и <code>web start</code> с консоли.
+        </p>
+      </fieldset>
+
+      <div class="row" style="grid-column:1/-1">
+        <button class="primary" id="save-settings" type="submit">Сохранить в карточку</button>
+        <button id="reload-settings" type="button">Вернуть текущие</button>
+      </div>
+      <p class="message" id="settings-message" style="grid-column:1/-1"></p>
+    </form>
+  </section>
+
+  <footer>
+    Галерея показывает то же, что нарисовано на экране; удалять можно только то,
+    что лежит в <code>PFTEST</code> — остальное на карте принадлежит прошивке.
+  </footer>
+</main>
+
+<script type="module">
+import { WIDTH, HEIGHT, FRAME_BYTES, packImage, drawFrame } from "./pf6.mjs";
+
+const $ = (id) => document.getElementById(id);
+const say = (id, text, kind) => {
+  const element = $(id);
+  element.textContent = text;
+  element.className = `message${kind ? ` ${kind}` : ""}`;
+};
+const basename = (path) => path.split("/").pop();
+
+// --- tabs -----------------------------------------------------------------
+// The hash is the state: a link to #gallery opens the gallery, and the browser's
+// back button works without any history bookkeeping.
+
+const TABS = ["photos", "gallery", "settings"];
+
+function showTab(name) {
+  if (!TABS.includes(name)) name = "photos";
+  for (const tab of TABS) {
+    $(`tab-${tab}`).hidden = tab !== name;
+    $(`tab-link-${tab}`).setAttribute("aria-selected", String(tab === name));
+  }
+}
+
+function currentTab() {
+  const name = location.hash.replace(/^#/, "");
+  return TABS.includes(name) ? name : "photos";
+}
+
+window.addEventListener("hashchange", () => {
+  showTab(currentTab());
+  if (currentTab() === "gallery") loadGalleryPage();
+});
+showTab(currentTab());
+
+// --- upload ---------------------------------------------------------------
+
+const preview = $("preview");
+const previewContext = preview.getContext("2d", { willReadFrequently: true });
+const send = $("send");
+const drop = $("drop");
+const input = $("file");
+
+let source = null;
+let frame = null;
+
+const options = () => ({
+  mode: document.querySelector('input[name="mode"]:checked').value,
+  dither: $("dither").checked,
+});
+
+function render() {
+  if (!source) return;
+  frame = packImage(source, previewContext, options());
+  if (frame.length !== FRAME_BYTES) throw new Error(`кадр ${frame.length}`);
+  send.disabled = false;
+  $("preview-note").textContent =
+    `${source.width}×${source.height} → ${WIDTH}×${HEIGHT}, ${frame.length} байт готово`;
+}
+
+async function choose(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) { say("upload-message", "Это не картинка", "bad"); return; }
+  // createImageBitmap applies EXIF orientation, so a phone photo is not delivered
+  // lying on its side.
+  source = await createImageBitmap(file);
+  const name = file.name || "из буфера обмена";
+  say("upload-message", `${name}: ${(file.size / 1024).toFixed(0)} КБ`, "");
+  render();
+}
+
+// A picture can arrive three ways and they are not the same thing: a file drag
+// (`Files`), a drag from another tab (a URL and *no* file at all), or a paste.
+// The second is the one that used to highlight the box and then do nothing.
+function droppedPicture(data) {
+  const files = [...(data.files ?? [])];
+  // A clipboard often lists the picture only as an item, with an empty `files`.
+  for (const item of data.items ?? []) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) return file;
+    }
+  }
+  const file = files.find((candidate) => candidate.type.startsWith("image/"));
+  if (file) return file;
+  // Firefox and Chrome describe a cross-document drag as a URL. `uri-list` is
+  // the standard form; `text/html` carries the <img> the user grabbed.
+  const list = (data.getData("text/uri-list") || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith("#"));
+  if (list) return list;
+  const html = data.getData("text/html") || "";
+  const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (match) return match[1];
+  const text = (data.getData("text/plain") || "").trim();
+  if (/^(https?:|data:image\/|blob:)/i.test(text)) return text;
+  return files[0] ?? null;
+}
+
+// Every POST goes through here. The frame refuses a POST without this header:
+// a page on another site cannot add it (that needs a CORS preflight the frame
+// never answers), so it cannot change settings or delete pictures behind your
+// back.
+function post(url, init = {}) {
+  return fetch(url, {
+    ...init,
+    method: "POST",
+    headers: { ...(init.headers ?? {}), "X-Photoframe": "1" },
+  });
+}
+
+// Fetch a dragged picture by URL. The frame's page can only read pixels from a
+// site that allows it (`Access-Control-Allow-Origin`), which most do not: that
+// is a browser rule about drawing a foreign picture into a canvas, not something
+// the frame can fix. Same-origin drags - anything from this page's own gallery -
+// are always allowed.
+async function pictureFromUrl(url) {
+  const answer = await fetch(url, { mode: "cors", credentials: "omit" });
+  if (!answer.ok) throw new Error(`HTTP ${answer.status}`);
+  const blob = await answer.blob();
+  if (!blob.type.startsWith("image/")) throw new Error("это не картинка");
+  // A fetched blob has no name, so take one from the URL: the upload message
+  // should say which picture arrived, and "из буфера обмена" would be a lie.
+  let name = "";
+  try {
+    name = decodeURIComponent(new URL(url, location.href).pathname.split("/").pop() ?? "");
+  } catch {
+    name = "";
+  }
+  return name ? new File([blob], name, { type: blob.type }) : blob;
+}
+
+async function acceptDrop(data) {
+  const dropped = droppedPicture(data);
+  if (!dropped) {
+    say("upload-message", "В перетаскивании нет картинки — перетащите файл или саму картинку", "bad");
+    return;
+  }
+  if (typeof dropped !== "string") return choose(dropped);
+  say("upload-message", "Забираю картинку по ссылке…", "");
+  try {
+    return await choose(await pictureFromUrl(dropped));
+  } catch (error) {
+    // Two different failures deserve two different answers: a link that is not a
+    // picture at all, and a site that will not let this page read its pixels.
+    if (/не картинка/.test(String(error))) {
+      say("upload-message", "По этой ссылке не картинка", "bad");
+      return;
+    }
+    say(
+      "upload-message",
+      `Сайт не разрешает браузеру отдать эту картинку странице рамки (${error}). ` +
+        "Сохраните её (правый клик → «Сохранить изображение как…») и перетащите файл.",
+      "bad"
+    );
+  }
+}
+
+input.addEventListener("change", () => choose(input.files[0]));
+drop.addEventListener("click", () => input.click());
+drop.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); input.click(); }
+});
+for (const type of ["dragenter", "dragover"]) {
+  drop.addEventListener(type, (event) => { event.preventDefault(); drop.classList.add("over"); });
+}
+for (const type of ["dragleave", "drop"]) {
+  drop.addEventListener(type, (event) => { event.preventDefault(); drop.classList.remove("over"); });
+}
+drop.addEventListener("drop", (event) => {
+  event.preventDefault();
+  drop.classList.remove("over");
+  acceptDrop(event.dataTransfer);
+});
+// The same accept path for a picture copied elsewhere and pasted here: Ctrl+V is
+// the keyboard's version of a drag, and Firefox puts the image on the clipboard.
+document.addEventListener("paste", (event) => {
+  const data = event.clipboardData;
+  if (!data) return;
+  const hasPicture =
+    [...(data.files ?? [])].some((file) => file.type.startsWith("image/")) ||
+    [...(data.items ?? [])].some((item) => item.kind === "file" && item.type.startsWith("image/"));
+  if (!hasPicture && !data.getData("text/uri-list")) return;
+  event.preventDefault();
+  acceptDrop(data);
+});
+for (const control of document.querySelectorAll('input[name="mode"], #dither')) {
+  control.addEventListener("change", render);
+}
+
+send.addEventListener("click", async () => {
+  if (!frame) return;
+  send.disabled = true;
+  say("upload-message", "Отправляю…", "");
+  try {
+    const answer = await post("/upload", {
+      headers: { "Content-Type": "application/octet-stream" },
+      body: frame,
+    });
+    const text = (await answer.text()).trim();
+    say("upload-message", text, answer.ok ? "ok" : "bad");
+    if (answer.ok) refreshGallery();
+  } catch (error) {
+    say("upload-message", `Ошибка: ${error}`, "bad");
+  } finally {
+    send.disabled = false;
+  }
+});
+
+// --- gallery --------------------------------------------------------------
+// A card can hold hundreds of pictures and the frame decodes one frame at a
+// time, so the page never asks for all of them: it holds the names, draws one
+// page of thumbnails, and keeps decoded frames in a small cache so paging back
+// and forth does not refetch. Nothing here depends on the list being small.
+
+const PAGE = 12;
+const CACHE_LIMIT = 48;
+const cache = new Map();
+
+// The firmware deletes only inside PFTEST, so the page does not offer a button
+// that is bound to fail: the vendor's own pictures are shown and left alone.
+const WRITABLE = "pftest/";
+const removable = (name) => name.toLowerCase().startsWith(WRITABLE);
+
+const gallery = {
+  dir: "",
+  images: [],
+  page: 1,
+  search: "",
+  selected: new Set(),
+  armed: false,
+  armedCard: "",
+};
+
+// How long a second click still counts as confirmation.
+const ARM_MS = 5000;
+
+function visibleImages() {
+  const needle = gallery.search.trim().toLowerCase();
+  if (!needle) return gallery.images;
+  return gallery.images.filter((image) => basename(image.name).toLowerCase().includes(needle));
+}
+
+function pageCount() {
+  return Math.max(1, Math.ceil(visibleImages().length / PAGE));
+}
+
+function pageImages() {
+  const start = (gallery.page - 1) * PAGE;
+  return visibleImages().slice(start, start + PAGE);
+}
+
+function remember(name, bytes) {
+  // Insertion order is the age, so the first key is the oldest.
+  cache.delete(name);
+  cache.set(name, bytes);
+  while (cache.size > CACHE_LIMIT) {
+    cache.delete(cache.keys().next().value);
+  }
+}
+
+function paintCard(name) {
+  const card = document.querySelector(`figure.frame[data-name="${CSS.escape(name)}"]`);
+  if (!card) return;
+  const bytes = cache.get(name);
+  const context = card.querySelector("canvas").getContext("2d");
+  if (!bytes) {
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, WIDTH, HEIGHT);
+    return;
+  }
+  drawFrame(context, bytes);
+}
+
+/// Ask the frame for one frame and keep it. One at a time: the frame reads the
+/// card from a single owner, and parallel requests would only queue there.
+async function fetchFrame(name) {
+  const answer = await fetch(`/image?path=${encodeURIComponent(name)}`);
+  if (!answer.ok) {
+    const text = (await answer.text()).trim();
+    throw new Error(text || `${answer.status}`);
+  }
+  const bytes = new Uint8Array(await answer.arrayBuffer());
+  if (bytes.length !== FRAME_BYTES) throw new Error(`кадр ${bytes.length}`);
+  remember(name, bytes);
+  return bytes;
+}
+
+let queue = Promise.resolve();
+
+function loadGalleryPage() {
+  // Serialised through one promise, so a fast pager click cannot stack requests.
+  queue = queue.then(loadVisible).catch(() => {});
+  return queue;
+}
+
+async function loadVisible() {
+  if ($("tab-gallery").hidden) return;
+  for (const image of pageImages()) {
+    if (cache.has(image.name)) { paintCard(image.name); continue; }
+    try {
+      await fetchFrame(image.name);
+      paintCard(image.name);
+    } catch (error) {
+      const card = document.querySelector(`figure.frame[data-name="${CSS.escape(image.name)}"]`);
+      if (!card) continue;
+      card.dataset.state = "broken";
+      card.title = String(error);
+      const context = card.querySelector("canvas").getContext("2d");
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, WIDTH, HEIGHT);
+      context.fillStyle = "#b42318";
+      context.font = "24px system-ui, sans-serif";
+      context.fillText("не читается", 24, 48);
+    }
+  }
+}
+
+function card(image) {
+  const figure = document.createElement("figure");
+  figure.className = "frame";
+  figure.dataset.name = image.name;
+  if (gallery.selected.has(image.name)) figure.classList.add("selected");
+
+  const canvas = document.createElement("canvas");
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  canvas.loading = "lazy";
+  if (cache.has(image.name)) drawFrame(canvas.getContext("2d"), cache.get(image.name));
+  else {
+    const blank = canvas.getContext("2d");
+    blank.fillStyle = "#fff";
+    blank.fillRect(0, 0, WIDTH, HEIGHT);
+  }
+
+  const canRemove = removable(image.name);
+
+  const pick = document.createElement("input");
+  pick.type = "checkbox";
+  pick.className = "pick";
+  pick.hidden = !canRemove;
+  pick.checked = gallery.selected.has(image.name);
+  pick.setAttribute("aria-label", `Выбрать ${basename(image.name)}`);
+  pick.addEventListener("change", () => {
+    if (pick.checked) gallery.selected.add(image.name);
+    else gallery.selected.delete(image.name);
+    figure.classList.toggle("selected", pick.checked);
+    updateSelection();
+  });
+
+  const caption = document.createElement("figcaption");
+  const top = document.createElement("div");
+  top.className = "line top";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = basename(image.name);
+  name.title = image.name;
+  top.append(pick, name);
+
+  const bottom = document.createElement("div");
+  bottom.className = "line";
+  const showButton = document.createElement("button");
+  showButton.className = "small";
+  showButton.textContent = "На экран";
+  showButton.addEventListener("click", () => showNow(image.name, showButton));
+  const trash = document.createElement("button");
+  trash.className = "small trash";
+  trash.textContent = "Удалить";
+  if (!canRemove) {
+    // A vendor picture: say why the button is absent rather than showing a
+    // control the frame would refuse.
+    trash.textContent = "не удаляется";
+    trash.disabled = true;
+    trash.title = `Файлы вне ${WRITABLE.slice(0, -1)} принадлежат прошивке и только читаются`;
+  }
+  trash.addEventListener("click", async () => {
+    if (!canRemove) return;
+    if (!arm(trash, "Удалить", "Точно?")) return;
+    trash.disabled = true;
+    await remove([image.name]);
+    trash.disabled = false;
+  });
+  const size = document.createElement("span");
+  size.textContent = `${Math.round(image.bytes / 1024)} КБ`;
+  bottom.append(size, showButton, trash);
+  caption.append(top, bottom);
+
+  figure.append(canvas, caption);
+  return figure;
+}
+
+function renderGallery() {
+  const grid = $("frames");
+  const empty = $("frames-empty");
+  const images = visibleImages();
+  grid.replaceChildren();
+
+  if (gallery.images.length === 0) {
+    empty.hidden = false;
+    empty.textContent = `В папке ${gallery.dir || "PFTEST/UPLOADS"} пока нет картинок — отправьте первую.`;
+  } else if (images.length === 0) {
+    empty.hidden = false;
+    empty.textContent = `По запросу «${gallery.search}» ничего нет.`;
+  } else {
+    empty.hidden = true;
+  }
+
+  gallery.page = Math.min(Math.max(1, gallery.page), pageCount());
+  for (const image of pageImages()) grid.append(card(image));
+
+  $("pager").hidden = pageCount() <= 1;
+  $("page-label").textContent = `${gallery.page} / ${pageCount()}`;
+  $("page-prev").disabled = gallery.page <= 1;
+  $("page-next").disabled = gallery.page >= pageCount();
+  updateSelection();
+}
+
+/// First click arms the button, a second click within a few seconds acts.
+/// Returns true when this click was the confirmation.
+function arm(button, label, confirmLabel) {
+  if (button.dataset.armed === "1") {
+    delete button.dataset.armed;
+    button.classList.remove("armed");
+    button.textContent = label;
+    return true;
+  }
+  button.dataset.armed = "1";
+  button.classList.add("armed");
+  button.textContent = confirmLabel;
+  clearTimeout(Number(button.dataset.timer ?? 0));
+  button.dataset.timer = String(setTimeout(() => {
+    delete button.dataset.armed;
+    button.classList.remove("armed");
+    button.textContent = label;
+  }, ARM_MS));
+  return false;
+}
+
+function updateSelection() {
+  const count = gallery.selected.size;
+  const button = $("gallery-remove");
+  button.disabled = count === 0;
+  button.classList.toggle("danger", count > 0);
+  button.textContent = count === 0 ? "Удалить выбранные" : `Удалить выбранные (${count})`;
+  const page = pageImages().filter((image) => removable(image.name));
+  $("gallery-select-page").checked = page.length > 0 && page.every((image) => gallery.selected.has(image.name));
+  $("gallery-select-page").disabled = page.length === 0;
+}
+
+async function refreshGallery() {
+  const empty = $("frames-empty");
+  empty.hidden = false;
+  empty.textContent = "Читаю карточку…";
+  try {
+    const answer = await fetch("/gallery");
+    const data = await answer.json();
+    gallery.dir = data.dir ?? "";
+    gallery.images = Array.isArray(data.images) ? data.images : [];
+    // A removal on another page cannot leave a stale selection behind.
+    for (const name of [...gallery.selected]) {
+      if (!gallery.images.some((image) => image.name === name)) gallery.selected.delete(name);
+    }
+    const count = gallery.images.length;
+    $("gallery-chip").textContent = count === 0 ? "галерея пуста" : `${count} в ${gallery.dir}`;
+    const badge = $("tab-count");
+    badge.hidden = count === 0;
+    badge.textContent = String(count);
+    renderGallery();
+    loadGalleryPage();
+  } catch (error) {
+    empty.hidden = false;
+    empty.textContent = "Карточка недоступна";
+    $("gallery-chip").textContent = "галерея?";
+  }
+}
+
+async function remove(names) {
+  say("gallery-message", `Удаляю ${names.length === 1 ? basename(names[0]) : names.length + " картинок"}…`, "");
+  const failed = [];
+  for (const name of names) {
+    try {
+      const answer = await post(`/delete?path=${encodeURIComponent(name)}`);
+      const text = (await answer.text()).trim();
+      if (!answer.ok) { failed.push(`${basename(name)}: ${text}`); continue; }
+      cache.delete(name);
+      gallery.selected.delete(name);
+      gallery.images = gallery.images.filter((image) => image.name !== name);
+    } catch (error) {
+      failed.push(`${basename(name)}: ${error}`);
+    }
+  }
+  const count = gallery.images.length;
+  $("gallery-chip").textContent = count === 0 ? "галерея пуста" : `${count} в ${gallery.dir}`;
+  const badge = $("tab-count");
+  badge.hidden = count === 0;
+  badge.textContent = String(count);
+  renderGallery();
+  say(
+    "gallery-message",
+    failed.length === 0
+      ? `Удалено: ${names.length}. Осталось ${count}.`
+      : `Не удалось: ${failed.join("; ")}`,
+    failed.length === 0 ? "ok" : "bad"
+  );
+  if (failed.length > 0) {
+    // A refusal is not always a refusal: the picture may have been removed from
+    // another tab, or from the console, between this page drawing the card and
+    // the click. The device is the authority on what is on the card, so ask it
+    // again instead of leaving a card that is no longer there.
+    const message = `Не удалось: ${failed.join("; ")}`;
+    await refreshGallery();
+    say("gallery-message", message, "bad");
+  }
+}
+
+async function showNow(path, button) {
+  button.disabled = true;
+  say("gallery-message", "Перерисовываю… (около 30 секунд)", "");
+  try {
+    const answer = await post(`/show?path=${encodeURIComponent(path)}`);
+    const text = (await answer.text()).trim();
+    say("gallery-message", text, answer.ok ? "ok" : "bad");
+  } catch (error) {
+    say("gallery-message", `Ошибка: ${error}`, "bad");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$("gallery-search").addEventListener("input", (event) => {
+  gallery.search = event.target.value;
+  gallery.page = 1;
+  renderGallery();
+  loadGalleryPage();
+});
+$("gallery-refresh").addEventListener("click", refreshGallery);
+$("page-prev").addEventListener("click", () => {
+  gallery.page = Math.max(1, gallery.page - 1);
+  renderGallery();
+  loadGalleryPage();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+$("page-next").addEventListener("click", () => {
+  gallery.page = Math.min(pageCount(), gallery.page + 1);
+  renderGallery();
+  loadGalleryPage();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+$("gallery-select-page").addEventListener("change", (event) => {
+  for (const image of pageImages()) {
+    if (!removable(image.name)) continue;
+    if (event.target.checked) gallery.selected.add(image.name);
+    else gallery.selected.delete(image.name);
+  }
+  renderGallery();
+});
+$("gallery-remove").addEventListener("click", async () => {
+  const names = [...gallery.selected];
+  const button = $("gallery-remove");
+  if (!arm(button, `Удалить выбранные (${names.length})`, `Точно удалить ${names.length}?`)) return;
+  button.disabled = true;
+  await remove(names);
+  button.disabled = gallery.selected.size === 0;
+});
+
+// --- settings -------------------------------------------------------------
+
+const form = $("settings");
+
+const setValue = (name, value) => {
+  const field = form.elements.namedItem(name);
+  if (!field) return;
+  if (field.type === "checkbox") {
+    field.checked = Boolean(value);
+    return;
+  }
+  if (field.tagName === "SELECT") {
+    // A value this page does not offer - a hand-edited CONFIG.TXT, or a language
+    // added to the bridge later - is shown as it is rather than blanking the
+    // box: an empty field means "keep", so blanking would hide the setting and
+    // leave the frame answering in a language nobody chose.
+    for (const option of [...field.options]) if (option.dataset.kept) option.remove();
+    if (value && ![...field.options].some((option) => option.value === value)) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = `${value} (не из списка)`;
+      option.dataset.kept = "1";
+      field.append(option);
+    }
+    field.value = value ?? "";
+    return;
+  }
+  field.value = value ?? "";
+};
+
+async function loadSettings() {
+  try {
+    const answer = await fetch("/settings");
+    if (!answer.ok) throw new Error(`${answer.status}`);
+    const data = await answer.json();
+    setValue("wifi.ssid", data.wifi.ssid);
+    setValue("wifi.auto", data.wifi.auto);
+    setValue("wifi.password", "");
+    setValue("audio.volume_db", data.audio.volume_db);
+    setValue("audio.gain_db", data.audio.gain_db);
+    setValue("ai.url", data.ai.url);
+    setValue("ai.key", "");
+    setValue("ai.lang", data.ai.lang);
+    setValue("ai.idle", data.ai.idle);
+    setValue("ai.threshold", data.ai.threshold);
+    setValue("gallery.dir", data.gallery.dir);
+    setValue("gallery.secs", data.gallery.secs);
+    setValue("gallery.auto", data.gallery.auto);
+    setValue("web.password", "");
+    $("wifi-password").placeholder = data.wifi.password_set
+      ? "задан — оставьте пустым"
+      : "сеть без пароля";
+    $("ai-key").placeholder = data.ai.key_set
+      ? "задан — оставьте пустым"
+      : "мост без токена";
+    $("web-password").placeholder = data.web.password_set
+      ? "задан — оставьте пустым"
+      : "страница открыта";
+    say("settings-message", "", "");
+  } catch (error) {
+    say("settings-message", `Не смог прочитать настройки: ${error}`, "bad");
+  }
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = $("save-settings");
+  button.disabled = true;
+  say("settings-message", "Сохраняю…", "");
+  const body = new URLSearchParams();
+  for (const field of form.elements) {
+    if (!field.name) continue;
+    if (field.type === "checkbox") { body.set(field.name, field.checked ? "1" : "0"); continue; }
+    if (field.type === "password" && field.value === "") continue; // untouched
+    // An empty text box means "keep what is there", which is also what the
+    // firmware does with a field the form omits.
+    if (field.value === "") continue;
+    body.set(field.name, field.value);
+  }
+  try {
+    const answer = await post("/settings", {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    const text = (await answer.text()).trim();
+    say("settings-message", text, answer.ok ? "ok" : "bad");
+    if (answer.ok) {
+      loadSettings();
+      refreshGallery();
+    }
+  } catch (error) {
+    say("settings-message", `Ошибка: ${error}`, "bad");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("reload-settings").addEventListener("click", loadSettings);
+
+// --- start ----------------------------------------------------------------
+
+(async () => {
+  try {
+    const answer = await fetch("/status");
+    $("link-dot").className = answer.ok ? "dot on" : "dot off";
+    $("link-text").textContent = answer.ok ? "на связи" : "ошибка";
+  } catch {
+    $("link-dot").className = "dot off";
+    $("link-text").textContent = "нет связи";
+  }
+  refreshGallery();
+  loadSettings();
+  loadSensors();
+  setInterval(loadSensors, 60000);
+})();
+
+// Battery and room climate for the header; the frame reads them every 30 s.
+async function loadSensors() {
+  try {
+    const answer = await fetch("/sensors");
+    if (!answer.ok) return;
+    const sensors = await answer.json();
+    const battery = sensors.battery;
+    const chip = $("battery-chip");
+    if (battery && battery.present) {
+      const state = battery.charging ? " · заряжается" : battery.usb ? " · от USB" : "";
+      chip.textContent = `батарея ${battery.percent}% (${(battery.mv / 1000).toFixed(2)} В)${state}`;
+      chip.classList.toggle("bad", battery.low);
+      chip.hidden = false;
+    } else {
+      chip.hidden = true;
+    }
+    const ambient = sensors.ambient;
+    const climate = $("climate-chip");
+    if (ambient) {
+      climate.textContent = `${Number(ambient.temp_c).toFixed(1)} °C · ${Math.round(ambient.rh_pct)}%`;
+      climate.hidden = false;
+    } else {
+      climate.hidden = true;
+    }
+  } catch {
+    // The header simply keeps its last values; the link chip reports outages.
+  }
+}
+</script>
+</html>
