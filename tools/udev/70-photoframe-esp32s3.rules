@@ -1,0 +1,9 @@
+# ESP32-S3 USB-Serial/JTAG (the PhotoPainter's console and flashing port).
+#
+# The frame re-enumerates on every deep-sleep wake, so the tty node is created
+# again each time; `uaccess` lets the logged-in user open it without being in
+# `dialout`, every time, instead of a manual setfacl after each wake.
+#
+# Install: sudo install -m 0644 tools/udev/70-photoframe-esp32s3.rules /etc/udev/rules.d/
+#          sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=tty
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", TAG+="uaccess"
