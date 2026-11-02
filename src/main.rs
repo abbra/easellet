@@ -1816,19 +1816,30 @@ fn run() -> Result<(), EspError> {
                             Command::WifiTime(server) => ensure_online(net, &settings)
                                 .and_then(|()| wifi_time(net, &mut i2c, server.as_deref())),
                             Command::WifiOff => net.off(),
-                            Command::AiStt(ms) => ensure_online(net, &settings).and_then(|()| {
-                                match &mut audio_state {
-                                    Ok(audio) => {
-                                        assistant_turn(audio, &mut i2c, &settings, ms, "console")
-                                            .map(|turn| turn.report)
-                                    }
-                                    Err(error) => Err(error.clone()),
-                                }
-                            }),
+                            // The button comes first, exactly as in `ai listen`: an
+                            // operator told to "press KEY during `ai stt`" used to
+                            // press after the cue had already gone, and the silent
+                            // recording looked like a capture bug. Waiting here makes
+                            // the command honest; the only difference from `ai listen`
+                            // is that this one leaves the panel alone.
+                            Command::AiStt(ms) => wait_for_key("ai.stt", &key, KEY_WAIT)
+                                .and_then(|waited| {
+                                    ensure_online(net, &settings)?;
+                                    let turn = match &mut audio_state {
+                                        Ok(audio) => {
+                                            assistant_turn(audio, &mut i2c, &settings, ms, "key")?
+                                        }
+                                        Err(error) => return Err(error.clone()),
+                                    };
+                                    Ok(format!(
+                                        "{}  waited_ms={waited}",
+                                        turn.report.trim_end()
+                                    ))
+                                }),
                             // The button comes first and the radio after it: a join
                             // that has to run takes seconds, and making somebody hold
                             // the button through it would feel like a dead frame.
-                            Command::AiListen(ms) => wait_for_key(&key, KEY_WAIT)
+                            Command::AiListen(ms) => wait_for_key("ai.listen", &key, KEY_WAIT)
                                 .and_then(|waited| {
                                     ensure_online(net, &settings)?;
                                     let turn = match &mut audio_state {
@@ -1844,7 +1855,7 @@ fn run() -> Result<(), EspError> {
                                         turn.report.trim_end()
                                     ))
                                 }),
-                            Command::AiTalk(ms) => wait_for_key(&key, KEY_WAIT)
+                            Command::AiTalk(ms) => wait_for_key("ai.talk", &key, KEY_WAIT)
                                 .and_then(|waited| {
                                     ensure_online(net, &settings)?;
                                     let turn = match &mut audio_state {
@@ -2950,7 +2961,11 @@ const KEY_WAIT: Duration = Duration::from_secs(30);
 /// Polling rather than the GPIO interrupt: the console loop is already the only
 /// place that touches this pin, and an interrupt would need to hand a token back to
 /// a loop that is busy running a capture.
-fn wait_for_key(key: &PinDriver<'_, Input>, limit: Duration) -> Result<u128, String> {
+fn wait_for_key(
+    command: &str,
+    key: &PinDriver<'_, Input>,
+    limit: Duration,
+) -> Result<u128, String> {
     let started = Instant::now();
     loop {
         if key.is_low() {
@@ -2958,7 +2973,7 @@ fn wait_for_key(key: &PinDriver<'_, Input>, limit: Duration) -> Result<u128, Str
         }
         if started.elapsed() >= limit {
             return Err(format!(
-                "ERR ai.listen: no KEY press within {} s\r\n",
+                "ERR {command}: no KEY press within {} s\r\n",
                 limit.as_secs()
             ));
         }
