@@ -42,10 +42,33 @@ async function until(check, timeout = 20000, step = 100) {
 
 async function main() {
   const frame = document.getElementById("frame");
-  await new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
-  const doc = frame.contentDocument;
+  const frameLoaded = () => new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
+  await frameLoaded();
+  // The page must open in English when nobody has chosen a language yet. The
+  // choice lives in localStorage, which the harness shares with the iframe.
+  localStorage.removeItem("easellet.lang");
+  frame.contentWindow.location.reload();
+  await frameLoaded();
+  let doc = frame.contentDocument;
   const $ = (id) => doc.getElementById(id);
   const cards = () => [...doc.querySelectorAll("figure.frame")];
+
+  log(
+    doc.documentElement.lang === "en" && $("tab-link-photos").textContent.trim() === "Photo",
+    `язык по умолчанию: ${doc.documentElement.lang} «${$("tab-link-photos").textContent.trim()}»`
+  );
+
+  // Switching is a data change, not a reload: the same nodes get the new
+  // strings, and the choice is what the next visit starts with.
+  $("ui-lang").value = "ru";
+  $("ui-lang").dispatchEvent(new Event("change"));
+  await wait(200);
+  log(
+    doc.documentElement.lang === "ru" &&
+      $("tab-link-photos").textContent.trim() === "Фотография" &&
+      localStorage.getItem("easellet.lang") === "ru",
+    `переключение на русский: ${$("tab-link-photos").textContent.trim()}`
+  );
 
   // --- the list arrives -------------------------------------------------
   const chip = await until(() => $("gallery-chip").textContent.includes("EASELTEST"));

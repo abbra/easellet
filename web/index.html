@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <meta charset="utf-8">
-<title>Фоторамка</title>
+<title data-i18n="app.title">Easellet</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
@@ -52,6 +52,13 @@
     border-radius: 999px; padding: .3rem .7rem;
   }
   .chip.bad { color: var(--bad); border-color: var(--bad); }
+  /* The interface language, not the language the frame answers in (`ai.lang`).
+     Autonyms only: a name is never translated into a language it is not in. */
+  .chips select.lang {
+    font: inherit; font-size: .8rem; padding: .25rem .5rem; border-radius: 999px;
+    width: auto; flex: 0 0 auto;
+    color: var(--muted); background: var(--card); border: 1px solid var(--line);
+  }
   .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); }
   .dot.on { background: var(--ok); }
   .dot.off { background: var(--bad); }
@@ -174,100 +181,101 @@
 
 <main>
   <header class="top">
-    <h1>Фоторамка <small>Отправить фотографию · посмотреть галерею · настроить</small></h1>
+    <h1><span data-i18n="app.title">Easellet</span> <small data-i18n="app.tagline">Send a photo · browse the gallery · settings</small></h1>
     <div class="chips">
-      <span class="chip"><span class="dot" id="link-dot"></span><span id="link-text">связь…</span></span>
-      <span class="chip" id="gallery-chip">галерея…</span>
+      <span class="chip"><span class="dot" id="link-dot"></span><span id="link-text" data-i18n="link.connecting">link…</span></span>
+      <span class="chip" id="gallery-chip" data-i18n="gallery.chip.connecting">gallery…</span>
       <span class="chip" id="battery-chip" hidden></span>
       <span class="chip" id="climate-chip" hidden></span>
+      <select id="ui-lang" class="lang" data-i18n-aria="lang.label" aria-label="Interface language"></select>
     </div>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Разделы">
-    <a href="#photos" role="tab" id="tab-link-photos" aria-selected="true" aria-controls="tab-photos">Фотография</a>
+  <nav class="tabs" role="tablist" data-i18n-aria="nav.label" aria-label="Sections">
+    <a href="#photos" role="tab" id="tab-link-photos" aria-selected="true" aria-controls="tab-photos"><span data-i18n="tab.photos">Photo</span></a>
     <a href="#gallery" role="tab" id="tab-link-gallery" aria-selected="false" aria-controls="tab-gallery">
-      Галерея <span class="count" id="tab-count" hidden>0</span>
+      <span data-i18n="tab.gallery">Gallery</span> <span class="count" id="tab-count" hidden>0</span>
     </a>
-    <a href="#settings" role="tab" id="tab-link-settings" aria-selected="false" aria-controls="tab-settings">Настройки</a>
+    <a href="#settings" role="tab" id="tab-link-settings" aria-selected="false" aria-controls="tab-settings"><span data-i18n="tab.settings">Settings</span></a>
   </nav>
 
   <section class="card" id="tab-photos" role="tabpanel" aria-labelledby="tab-link-photos">
-    <h2>Отправить фотографию</h2>
+    <h2 data-i18n="photos.title">Send a photo</h2>
     <div class="split">
       <div>
-        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать фотографию">
-          <strong>Выберите фотографию</strong>
-          <span>перетащите её сюда или нажмите</span>
+        <div class="drop" id="drop" tabindex="0" role="button" data-i18n-aria="drop.aria" aria-label="Choose a photo">
+          <strong data-i18n="drop.title">Choose a photo</strong>
+          <span data-i18n="drop.hint">drag it here or click</span>
           <input id="file" type="file" accept="image/*" hidden>
         </div>
         <div class="row" style="margin-top:.9rem">
-          <label class="option"><input type="radio" name="mode" value="cover" checked> заполнить</label>
-          <label class="option"><input type="radio" name="mode" value="contain"> целиком</label>
-          <label class="option"><input type="checkbox" id="dither" checked> плавно</label>
+          <label class="option"><input type="radio" name="mode" value="cover" checked> <span data-i18n="mode.cover">fill</span></label>
+          <label class="option"><input type="radio" name="mode" value="contain"> <span data-i18n="mode.contain">fit</span></label>
+          <label class="option"><input type="checkbox" id="dither" checked> <span data-i18n="mode.dither">smooth</span></label>
         </div>
-        <p class="note">
-          Картинка уменьшается до 800×480 и переводится в шесть цветов экрана в
-          браузере: на рамку уходят готовые 192 000 байт.
+        <p class="note" data-i18n="upload.note">
+          The picture is scaled to 800×480 and reduced to the six colours of the
+          screen in your browser: the frame receives 192 000 ready bytes.
         </p>
         <div class="row" style="margin-top:.9rem">
-          <button class="primary grow" id="send" disabled>Отправить на рамку</button>
+          <button class="primary grow" id="send" disabled data-i18n="upload.send">Send to the frame</button>
         </div>
         <p class="message" id="upload-message"></p>
       </div>
       <div>
-        <canvas id="preview" width="800" height="480" aria-label="предпросмотр"></canvas>
-        <p class="note" id="preview-note">Выберите картинку — здесь появится именно то, что покажет рамка.</p>
+        <canvas id="preview" width="800" height="480" data-i18n-aria="preview.aria" aria-label="preview"></canvas>
+        <p class="note" id="preview-note" data-i18n="preview.prompt">Choose a picture — this is exactly what the frame will show.</p>
       </div>
     </div>
   </section>
 
   <section class="card" id="tab-gallery" role="tabpanel" aria-labelledby="tab-link-gallery" hidden>
-    <h2>На рамке</h2>
+    <h2 data-i18n="gallery.title">On the frame</h2>
     <div class="toolbar">
-      <input id="gallery-search" type="search" placeholder="Поиск по имени файла" aria-label="Поиск по имени файла">
-      <button class="small" id="gallery-refresh">Обновить</button>
-      <button class="small danger" id="gallery-remove" disabled>Удалить выбранные</button>
-      <label class="option" style="margin-left:auto"><input type="checkbox" id="gallery-select-page"> выбрать страницу</label>
+      <input id="gallery-search" type="search" data-i18n-placeholder="gallery.search" data-i18n-aria="gallery.search" placeholder="Search by file name" aria-label="Search by file name">
+      <button class="small" id="gallery-refresh" data-i18n="gallery.refresh">Refresh</button>
+      <button class="small danger" id="gallery-remove" disabled data-i18n="gallery.remove">Delete selected</button>
+      <label class="option" style="margin-left:auto"><input type="checkbox" id="gallery-select-page"> <span data-i18n="gallery.selectPage">select page</span></label>
     </div>
     <div class="frames" id="frames"></div>
-    <p class="empty" id="frames-empty">Читаю карточку…</p>
+    <p class="empty" id="frames-empty" data-i18n="gallery.reading">Reading the card…</p>
     <div class="pager" id="pager" hidden>
-      <button class="small" id="page-prev">‹ Назад</button>
+      <button class="small" id="page-prev" data-i18n="gallery.prev">‹ Previous</button>
       <span id="page-label">1 / 1</span>
-      <button class="small" id="page-next">Вперёд ›</button>
+      <button class="small" id="page-next" data-i18n="gallery.next">Next ›</button>
     </div>
     <p class="message" id="gallery-message"></p>
   </section>
 
   <section class="card" id="tab-settings" role="tabpanel" aria-labelledby="tab-link-settings" hidden>
-    <h2>Настройки устройства</h2>
-    <p class="note" style="margin:0 0 1rem">
-      Это административная часть: значения здесь действуют на рамку для всех, кто
-      её видит. Фотографии и галерея от них не зависят.
+    <h2 data-i18n="settings.title">Device settings</h2>
+    <p class="note" style="margin:0 0 1rem" data-i18n="settings.intro">
+      This is the administrative part: values here change the frame for everyone
+      who sees it. Photos and the gallery do not depend on them.
     </p>
     <form class="settings" id="settings">
       <fieldset>
-        <legend>Wi-Fi</legend>
-        <div class="field"><label for="wifi-ssid">Сеть</label><input id="wifi-ssid" name="wifi.ssid" type="text" autocomplete="off"></div>
-        <div class="field"><label for="wifi-password">Пароль</label><input id="wifi-password" name="wifi.password" type="password" autocomplete="new-password" placeholder="оставьте пустым, чтобы не менять"></div>
-        <label class="option"><input type="checkbox" name="wifi.auto" id="wifi-auto"> подключаться при включении</label>
+        <legend data-i18n="settings.wifi">Wi-Fi</legend>
+        <div class="field"><label for="wifi-ssid" data-i18n="settings.network">Network</label><input id="wifi-ssid" name="wifi.ssid" type="text" autocomplete="off"></div>
+        <div class="field"><label for="wifi-password" data-i18n="settings.password">Password</label><input id="wifi-password" name="wifi.password" type="password" autocomplete="new-password" data-i18n-placeholder="settings.keep" placeholder="leave blank to keep"></div>
+        <label class="option"><input type="checkbox" name="wifi.auto" id="wifi-auto"> <span data-i18n="settings.autojoin">join at power-on</span></label>
       </fieldset>
 
       <fieldset>
-        <legend>Звук</legend>
-        <div class="field"><label for="audio-volume">Громкость, дБ</label><input id="audio-volume" name="audio.volume_db" type="number" step="0.5" placeholder="по умолчанию"></div>
-        <div class="field"><label for="audio-gain">Усиление микрофона, дБ</label><input id="audio-gain" name="audio.gain_db" type="number" step="0.5" placeholder="по умолчанию"></div>
+        <legend data-i18n="settings.sound">Sound</legend>
+        <div class="field"><label for="audio-volume" data-i18n="settings.volume">Volume, dB</label><input id="audio-volume" name="audio.volume_db" type="number" step="0.5" data-i18n-placeholder="settings.default" placeholder="default"></div>
+        <div class="field"><label for="audio-gain" data-i18n="settings.gain">Microphone gain, dB</label><input id="audio-gain" name="audio.gain_db" type="number" step="0.5" data-i18n-placeholder="settings.default" placeholder="default"></div>
       </fieldset>
 
       <fieldset>
-        <legend>Ответы</legend>
-        <div class="field"><label for="ai-url">Мост, URL</label><input id="ai-url" name="ai.url" type="text" placeholder="http://192.168.50.93:8095"></div>
-        <div class="field"><label for="ai-key">Токен моста</label><input id="ai-key" name="ai.key" type="password" autocomplete="off" placeholder="оставьте пустым, чтобы не менять"></div>
+        <legend data-i18n="settings.answers">Answers</legend>
+        <div class="field"><label for="ai-url" data-i18n="settings.bridgeUrl">Bridge URL</label><input id="ai-url" name="ai.url" type="text" placeholder="http://192.168.50.93:8095"></div>
+        <div class="field"><label for="ai-key" data-i18n="settings.bridgeToken">Bridge token</label><input id="ai-key" name="ai.key" type="password" autocomplete="off" data-i18n-placeholder="settings.keep" placeholder="leave blank to keep"></div>
         <!-- The four languages the bridge's recogniser is allowed to pick
              (`EASEL_STT_LANGS=ru,en,fi,fr` in bridge/src/whisper.rs). Offering a
              language the bridge does not hear would be a promise the frame
              cannot keep; a tag outside this list still round-trips. -->
-        <div class="field"><label for="ai-lang">Язык</label>
+        <div class="field"><label for="ai-lang" data-i18n="settings.language">Language</label>
           <select id="ai-lang" name="ai.lang">
             <option value="ru-RU">Русский</option>
             <option value="en-US">English</option>
@@ -275,52 +283,380 @@
             <option value="fr-FR">Français</option>
           </select>
         </div>
-        <p class="note">
-          Те же четыре языка, что понимает мост: русский, английский, финский,
-          французский. Рамка отвечает на языке вопроса; эта настройка — язык,
-          на котором она слушает и говорит, когда по тексту его не определить.
+        <p class="note" data-i18n="settings.langNote">
+          The same four languages the bridge understands: Russian, English,
+          Finnish, French. The frame answers in the language of the question; this
+          setting is the language it listens and speaks in when the text does not
+          decide.
         </p>
-        <div class="field"><label for="ai-idle">Слушать голос</label>
+        <div class="field"><label for="ai-idle" data-i18n="settings.listen">Listen for voice</label>
           <select id="ai-idle" name="ai.idle">
-            <option value="off">выключено</option>
-            <option value="key">по кнопке</option>
-            <option value="voice">по голосу</option>
+            <option value="off" data-i18n="settings.listenOff">off</option>
+            <option value="key" data-i18n="settings.listenKey">on button</option>
+            <option value="voice" data-i18n="settings.listenVoice">on voice</option>
           </select>
         </div>
-        <div class="field"><label for="ai-threshold">Порог голоса</label><input id="ai-threshold" name="ai.threshold" type="number" step="10" placeholder="по умолчанию"></div>
+        <div class="field"><label for="ai-threshold" data-i18n="settings.threshold">Voice threshold</label><input id="ai-threshold" name="ai.threshold" type="number" step="10" data-i18n-placeholder="settings.default" placeholder="default"></div>
       </fieldset>
 
       <fieldset>
-        <legend>Слайд-шоу</legend>
-        <div class="field"><label for="gallery-dir">Папка на карте</label><input id="gallery-dir" name="gallery.dir" type="text" placeholder="EASELTEST/UPLOADS"></div>
-        <div class="field"><label for="gallery-secs">Интервал, сек</label><input id="gallery-secs" name="gallery.secs" type="number" step="30" min="120" max="3600" placeholder="300"></div>
-        <label class="option"><input type="checkbox" name="gallery.auto" id="gallery-auto"> показывать при включении</label>
+        <legend data-i18n="settings.slideshow">Slideshow</legend>
+        <div class="field"><label for="gallery-dir" data-i18n="settings.dir">Folder on the card</label><input id="gallery-dir" name="gallery.dir" type="text" placeholder="EASELTEST/UPLOADS"></div>
+        <div class="field"><label for="gallery-secs" data-i18n="settings.interval">Interval, s</label><input id="gallery-secs" name="gallery.secs" type="number" step="30" min="120" max="3600" placeholder="300"></div>
+        <label class="option"><input type="checkbox" name="gallery.auto" id="gallery-auto"> <span data-i18n="settings.autoShow">show at power-on</span></label>
       </fieldset>
 
       <fieldset>
-        <legend>Защита устройства</legend>
-        <div class="field"><label for="web-password">Пароль страницы</label><input id="web-password" name="web.password" type="password" autocomplete="new-password" placeholder="пусто — не менять, «-» — убрать"></div>
-        <p class="note">
-          Пока страница открыта всем в домашней сети. Пароль включает вход по
-          HTTP Basic — это замок на дверь, а не шифрование: трафик идёт по
-          обычному HTTP. Новый пароль начнёт действовать после <code>web stop</code>
-          и <code>web start</code> с консоли.
+        <legend data-i18n="settings.protection">Device protection</legend>
+        <div class="field"><label for="web-password" data-i18n="settings.pagePassword">Page password</label><input id="web-password" name="web.password" type="password" autocomplete="new-password" data-i18n-placeholder="settings.pagePasswordHint" placeholder="blank — keep, “-” — remove"></div>
+        <p class="note" data-i18n-html="settings.protectionNote">
+          For now the page is open to everyone on the home network. A password turns
+          on HTTP Basic — that is a lock on the door, not encryption: traffic still
+          goes over plain HTTP. A new password applies after <code>web stop</code> and
+          <code>web start</code> from the console.
         </p>
       </fieldset>
 
       <div class="row" style="grid-column:1/-1">
-        <button class="primary" id="save-settings" type="submit">Сохранить в карточку</button>
-        <button id="reload-settings" type="button">Вернуть текущие</button>
+        <button class="primary" id="save-settings" type="submit" data-i18n="settings.save">Save to the card</button>
+        <button id="reload-settings" type="button" data-i18n="settings.revert">Restore current</button>
       </div>
       <p class="message" id="settings-message" style="grid-column:1/-1"></p>
     </form>
   </section>
 
-  <footer>
-    Галерея показывает то же, что нарисовано на экране; удалять можно только то,
-    что лежит в <code>EASELTEST</code> — остальное на карте принадлежит прошивке.
+  <footer data-i18n-html="footer.note">
+    The gallery shows what is drawn on the screen; only what lies in
+    <code>EASELTEST</code> can be deleted — the rest of the card belongs to the
+    firmware.
   </footer>
 </main>
+
+<!-- Interface language. English is the default because a page that greets a
+     stranger in a language they did not choose is a page they cannot read; the
+     selector in the header switches it, and the choice survives a reload.
+     Adding a language is one object in STRINGS and one entry in LANGUAGES:
+     everything else is `data-i18n` in the markup and t() in the script. -->
+<script>
+const LANGUAGES = [
+  ["en", "English"],
+  ["ru", "Русский"],
+];
+
+const STRINGS = {
+  en: {
+    "app.title": "Easellet",
+    "app.tagline": "Send a photo · browse the gallery · settings",
+    "lang.label": "Interface language",
+    "nav.label": "Sections",
+    "link.connecting": "link…",
+    "link.online": "online",
+    "link.error": "error",
+    "link.down": "no link",
+    "tab.photos": "Photo",
+    "tab.gallery": "Gallery",
+    "tab.settings": "Settings",
+    "tab.firmware": "Firmware",
+    "photos.title": "Send a photo",
+    "drop.aria": "Choose a photo",
+    "drop.title": "Choose a photo",
+    "drop.hint": "drag it here or click",
+    "mode.cover": "fill",
+    "mode.contain": "fit",
+    "mode.dither": "smooth",
+    "upload.note": "The picture is scaled to 800×480 and reduced to the six colours of the screen in your browser: the frame receives 192 000 ready bytes.",
+    "upload.send": "Send to the frame",
+    "preview.aria": "preview",
+    "preview.prompt": "Choose a picture — this is exactly what the frame will show.",
+    "preview.ready": "{width}×{height} → 800×480, {bytes} bytes ready",
+    "upload.notPicture": "That is not a picture",
+    "upload.clipboard": "from the clipboard",
+    "upload.selected": "{name}: {kb} KB",
+    "upload.sending": "Sending…",
+    "drop.empty": "The drag contains no picture — drag a file or the picture itself",
+    "drop.fetching": "Fetching the picture from the link…",
+    "drop.notPicture": "The link is not a picture",
+    "drop.blocked": "The site does not let the browser hand this picture to the frame's page ({error}). Save it (right click → “Save image as…”) and drag the file.",
+    "gallery.title": "On the frame",
+    "gallery.search": "Search by file name",
+    "gallery.refresh": "Refresh",
+    "gallery.remove": "Delete selected",
+    "gallery.removeCount": "Delete selected ({count})",
+    "gallery.confirmCount": "Delete {count}?",
+    "gallery.confirm": "Sure?",
+    "gallery.delete": "Delete",
+    "gallery.selectPage": "select page",
+    "gallery.reading": "Reading the card…",
+    "gallery.empty": "The folder {dir} has no pictures yet — send the first one.",
+    "gallery.noMatch": "Nothing matches “{search}”.",
+    "gallery.unavailable": "The card is unavailable",
+    "gallery.unreadable": "unreadable",
+    "gallery.prev": "‹ Previous",
+    "gallery.next": "Next ›",
+    "gallery.show": "Show",
+    "gallery.keep": "not deletable",
+    "gallery.keepTitle": "Files outside {dir} belong to the firmware and are read-only",
+    "gallery.size": "{kb} KB",
+    "gallery.pick": "Select {name}",
+    "gallery.deleting": "Deleting {name}…",
+    "gallery.deletingMany": "Deleting {count} pictures…",
+    "gallery.deleted": "Deleted: {count}. {left} left.",
+    "gallery.failed": "Failed: {list}",
+    "gallery.drawing": "Redrawing… (about 30 seconds)",
+    "gallery.chip.connecting": "gallery…",
+    "gallery.chip.empty": "gallery is empty",
+    "gallery.chip.count": "{count} in {dir}",
+    "gallery.chip.unavailable": "gallery?",
+    "settings.title": "Device settings",
+    "settings.intro": "This is the administrative part: values here change the frame for everyone who sees it. Photos and the gallery do not depend on them.",
+    "settings.wifi": "Wi-Fi",
+    "settings.network": "Network",
+    "settings.password": "Password",
+    "settings.keep": "leave blank to keep",
+    "settings.autojoin": "join at power-on",
+    "settings.sound": "Sound",
+    "settings.volume": "Volume, dB",
+    "settings.gain": "Microphone gain, dB",
+    "settings.default": "default",
+    "settings.answers": "Answers",
+    "settings.bridgeUrl": "Bridge URL",
+    "settings.bridgeToken": "Bridge token",
+    "settings.language": "Language",
+    "settings.langNote": "The same four languages the bridge understands: Russian, English, Finnish, French. The frame answers in the language of the question; this setting is the language it listens and speaks in when the text does not decide.",
+    "settings.listen": "Listen for voice",
+    "settings.listenOff": "off",
+    "settings.listenKey": "on button",
+    "settings.listenVoice": "on voice",
+    "settings.threshold": "Voice threshold",
+    "settings.slideshow": "Slideshow",
+    "settings.dir": "Folder on the card",
+    "settings.interval": "Interval, s",
+    "settings.autoShow": "show at power-on",
+    "settings.protection": "Device protection",
+    "settings.pagePassword": "Page password",
+    "settings.pagePasswordHint": "blank — keep, “-” — remove",
+    "settings.protectionNote": "For now the page is open to everyone on the home network. A password turns on HTTP Basic — that is a lock on the door, not encryption: traffic still goes over plain HTTP. A new password applies after <code>web stop</code> and <code>web start</code> from the console.",
+    "settings.save": "Save to the card",
+    "settings.revert": "Restore current",
+    "settings.unknown": "{value} (not in the list)",
+    "settings.keepSet": "set — leave blank",
+    "settings.wifiOpen": "network without a password",
+    "settings.bridgeNoToken": "bridge without a token",
+    "settings.pageOpen": "page is open",
+    "settings.readError": "Could not read the settings: {error}",
+    "settings.saving": "Saving…",
+    "firmware.title": "Firmware",
+    "firmware.intro": "A new image is written to the slot the frame is not running from, and the frame restarts into it. A build that does not start is replaced by the one running now on the next reset — a failed update costs a minute, not the frame.",
+    "firmware.fact.version": "version {version}",
+    "firmware.fact.slot": "running {slot} · {state}",
+    "firmware.fact.next": "upload goes to {slot} ({version})",
+    "firmware.fact.max": "slot holds {mb} MiB",
+    "firmware.empty": "empty",
+    "firmware.state.valid": "valid",
+    "firmware.state.unverified": "on probation",
+    "firmware.state.invalid": "invalid",
+    "firmware.state.factory": "factory",
+    "firmware.state.unknown": "unknown",
+    "firmware.file": "Firmware image (.bin)",
+    "firmware.send": "Install and restart",
+    "firmware.confirm": "Restart into it?",
+    "firmware.tooLarge": "The image is {kb} KB; the slot holds {mb} MiB",
+    "firmware.sending": "Uploading and writing flash — do not close the page…",
+    "firmware.restart": "Installed. The frame is restarting into the new image; this page reconnects by itself.",
+    "firmware.waiting": "Waiting for the frame to come back…",
+    "firmware.lost": "The connection ended without an answer ({error}).",
+    "firmware.noReturn": "The frame has not come back yet; reload this page once it has.",
+    "firmware.readError": "Could not read the firmware state: {error}",
+    "firmware.where": "The image is <code>target/xtensa-esp32s3-espidf/release/easellet.bin</code> from a release build. The first OTA needs a serial flash of the bootloader, the partition table and the app: see “Flashing” in <code>README.md</code>.",
+    "footer.note": "The gallery shows what is drawn on the screen; only what lies in <code>EASELTEST</code> can be deleted — the rest of the card belongs to the firmware.",
+    "sensors.battery": "battery {percent}% ({volts} V)",
+    "sensors.charging": " · charging",
+    "sensors.usb": " · USB",
+    "error": "Error: {error}",
+    "frameSize": "frame {bytes}",
+  },
+  ru: {
+    "app.title": "Easellet",
+    "app.tagline": "Отправить фотографию · посмотреть галерею · настроить",
+    "lang.label": "Язык интерфейса",
+    "nav.label": "Разделы",
+    "link.connecting": "связь…",
+    "link.online": "на связи",
+    "link.error": "ошибка",
+    "link.down": "нет связи",
+    "tab.photos": "Фотография",
+    "tab.gallery": "Галерея",
+    "tab.settings": "Настройки",
+    "tab.firmware": "Прошивка",
+    "photos.title": "Отправить фотографию",
+    "drop.aria": "Выбрать фотографию",
+    "drop.title": "Выберите фотографию",
+    "drop.hint": "перетащите её сюда или нажмите",
+    "mode.cover": "заполнить",
+    "mode.contain": "целиком",
+    "mode.dither": "плавно",
+    "upload.note": "Картинка уменьшается до 800×480 и переводится в шесть цветов экрана в браузере: на рамку уходят готовые 192 000 байт.",
+    "upload.send": "Отправить на рамку",
+    "preview.aria": "предпросмотр",
+    "preview.prompt": "Выберите картинку — здесь появится именно то, что покажет рамка.",
+    "preview.ready": "{width}×{height} → 800×480, {bytes} байт готово",
+    "upload.notPicture": "Это не картинка",
+    "upload.clipboard": "из буфера обмена",
+    "upload.selected": "{name}: {kb} КБ",
+    "upload.sending": "Отправляю…",
+    "drop.empty": "В перетаскивании нет картинки — перетащите файл или саму картинку",
+    "drop.fetching": "Забираю картинку по ссылке…",
+    "drop.notPicture": "По этой ссылке не картинка",
+    "drop.blocked": "Сайт не разрешает браузеру отдать эту картинку странице рамки ({error}). Сохраните её (правый клик → «Сохранить изображение как…») и перетащите файл.",
+    "gallery.title": "На рамке",
+    "gallery.search": "Поиск по имени файла",
+    "gallery.refresh": "Обновить",
+    "gallery.remove": "Удалить выбранные",
+    "gallery.removeCount": "Удалить выбранные ({count})",
+    "gallery.confirmCount": "Точно удалить {count}?",
+    "gallery.confirm": "Точно?",
+    "gallery.delete": "Удалить",
+    "gallery.selectPage": "выбрать страницу",
+    "gallery.reading": "Читаю карточку…",
+    "gallery.empty": "В папке {dir} пока нет картинок — отправьте первую.",
+    "gallery.noMatch": "По запросу «{search}» ничего нет.",
+    "gallery.unavailable": "Карточка недоступна",
+    "gallery.unreadable": "не читается",
+    "gallery.prev": "‹ Назад",
+    "gallery.next": "Вперёд ›",
+    "gallery.show": "На экран",
+    "gallery.keep": "не удаляется",
+    "gallery.keepTitle": "Файлы вне {dir} принадлежат прошивке и только читаются",
+    "gallery.size": "{kb} КБ",
+    "gallery.pick": "Выбрать {name}",
+    "gallery.deleting": "Удаляю {name}…",
+    "gallery.deletingMany": "Удаляю {count} картинок…",
+    "gallery.deleted": "Удалено: {count}. Осталось {left}.",
+    "gallery.failed": "Не удалось: {list}",
+    "gallery.drawing": "Перерисовываю… (около 30 секунд)",
+    "gallery.chip.connecting": "галерея…",
+    "gallery.chip.empty": "галерея пуста",
+    "gallery.chip.count": "{count} в {dir}",
+    "gallery.chip.unavailable": "галерея?",
+    "settings.title": "Настройки устройства",
+    "settings.intro": "Это административная часть: значения здесь действуют на рамку для всех, кто её видит. Фотографии и галерея от них не зависят.",
+    "settings.wifi": "Wi-Fi",
+    "settings.network": "Сеть",
+    "settings.password": "Пароль",
+    "settings.keep": "оставьте пустым, чтобы не менять",
+    "settings.autojoin": "подключаться при включении",
+    "settings.sound": "Звук",
+    "settings.volume": "Громкость, дБ",
+    "settings.gain": "Усиление микрофона, дБ",
+    "settings.default": "по умолчанию",
+    "settings.answers": "Ответы",
+    "settings.bridgeUrl": "Мост, URL",
+    "settings.bridgeToken": "Токен моста",
+    "settings.language": "Язык",
+    "settings.langNote": "Те же четыре языка, что понимает мост: русский, английский, финский, французский. Рамка отвечает на языке вопроса; эта настройка — язык, на котором она слушает и говорит, когда по тексту его не определить.",
+    "settings.listen": "Слушать голос",
+    "settings.listenOff": "выключено",
+    "settings.listenKey": "по кнопке",
+    "settings.listenVoice": "по голосу",
+    "settings.threshold": "Порог голоса",
+    "settings.slideshow": "Слайд-шоу",
+    "settings.dir": "Папка на карте",
+    "settings.interval": "Интервал, сек",
+    "settings.autoShow": "показывать при включении",
+    "settings.protection": "Защита устройства",
+    "settings.pagePassword": "Пароль страницы",
+    "settings.pagePasswordHint": "пусто — не менять, «-» — убрать",
+    "settings.protectionNote": "Пока страница открыта всем в домашней сети. Пароль включает вход по HTTP Basic — это замок на дверь, а не шифрование: трафик идёт по обычному HTTP. Новый пароль начнёт действовать после <code>web stop</code> и <code>web start</code> с консоли.",
+    "settings.save": "Сохранить в карточку",
+    "settings.revert": "Вернуть текущие",
+    "settings.unknown": "{value} (не из списка)",
+    "settings.keepSet": "задан — оставьте пустым",
+    "settings.wifiOpen": "сеть без пароля",
+    "settings.bridgeNoToken": "мост без токена",
+    "settings.pageOpen": "страница открыта",
+    "settings.readError": "Не смог прочитать настройки: {error}",
+    "settings.saving": "Сохраняю…",
+    "firmware.title": "Прошивка",
+    "firmware.intro": "Новый образ записывается в слот, из которого рамка не работает, и рамка перезапускается в него. Сборку, которая не запустится, при следующем сбросе заменит текущая — неудачное обновление стоит минуты, а не рамки.",
+    "firmware.fact.version": "версия {version}",
+    "firmware.fact.slot": "работает {slot} · {state}",
+    "firmware.fact.next": "запись пойдёт в {slot} ({version})",
+    "firmware.fact.max": "слот вмещает {mb} МиБ",
+    "firmware.empty": "пусто",
+    "firmware.state.valid": "подтверждена",
+    "firmware.state.unverified": "на испытании",
+    "firmware.state.invalid": "недействительна",
+    "firmware.state.factory": "заводская",
+    "firmware.state.unknown": "неизвестно",
+    "firmware.file": "Образ прошивки (.bin)",
+    "firmware.send": "Установить и перезапустить",
+    "firmware.confirm": "Перезапустить в него?",
+    "firmware.tooLarge": "Образ {kb} КБ, а слот вмещает {mb} МиБ",
+    "firmware.sending": "Отправляю и пишу во флеш — не закрывайте страницу…",
+    "firmware.restart": "Установлено. Рамка перезапускается в новый образ; страница снова подключится сама.",
+    "firmware.waiting": "Жду, когда рамка вернётся…",
+    "firmware.lost": "Связь оборвалась без ответа ({error}).",
+    "firmware.noReturn": "Рамка пока не вернулась; обновите страницу, когда появится.",
+    "firmware.readError": "Не смог прочитать состояние прошивки: {error}",
+    "firmware.where": "Образ — это <code>target/xtensa-esp32s3-espidf/release/easellet.bin</code> из сборки release. Для первого OTA нужна последовательная прошивка загрузчика, таблицы разделов и приложения: см. «Flashing» в <code>README.md</code>.",
+    "footer.note": "Галерея показывает то же, что нарисовано на экране; удалять можно только то, что лежит в <code>EASELTEST</code> — остальное на карте принадлежит прошивке.",
+    "sensors.battery": "батарея {percent}% ({volts} В)",
+    "sensors.charging": " · заряжается",
+    "sensors.usb": " · от USB",
+    "error": "Ошибка: {error}",
+    "frameSize": "кадр {bytes}",
+  },
+};
+
+const LANGUAGE_KEY = "easellet.lang";
+
+function storedLanguage() {
+  try {
+    return localStorage.getItem(LANGUAGE_KEY);
+  } catch {
+    // Storage can be denied; the page then starts in English every time.
+    return null;
+  }
+}
+
+let language = STRINGS[storedLanguage()] ? storedLanguage() : "en";
+
+/// One string in the current language, `{name}` replaced from `vars`.
+/// A missing translation falls back to English rather than showing the key.
+function t(key, vars = {}) {
+  const text = STRINGS[language]?.[key] ?? STRINGS.en[key] ?? key;
+  return text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match));
+}
+
+function applyLanguage(next = language) {
+  language = STRINGS[next] ? next : "en";
+  try {
+    localStorage.setItem(LANGUAGE_KEY, language);
+  } catch {
+    // Nothing to persist to; the page still switches for this visit.
+  }
+  document.documentElement.lang = language;
+  for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+  for (const node of document.querySelectorAll("[data-i18n-html]")) node.innerHTML = t(node.dataset.i18nHtml);
+  for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+  for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
+  for (const node of document.querySelectorAll("[data-i18n-title]")) node.title = t(node.dataset.i18nTitle);
+  const picker = document.getElementById("ui-lang");
+  if (picker) picker.value = language;
+  // The script re-renders what it built itself (counts, chips, hints); the
+  // markup above is already done.
+  window.dispatchEvent(new CustomEvent("easellet-language", { detail: language }));
+}
+
+for (const [code, name] of LANGUAGES) {
+  const option = document.createElement("option");
+  option.value = code;
+  option.textContent = name;
+  document.getElementById("ui-lang").append(option);
+}
+document.getElementById("ui-lang").addEventListener("change", (event) => applyLanguage(event.target.value));
+applyLanguage(language);
+</script>
 
 <script type="module">
 import { WIDTH, HEIGHT, FRAME_BYTES, packImage, drawFrame } from "./el6.mjs";
@@ -332,6 +668,68 @@ const say = (id, text, kind) => {
   element.className = `message${kind ? ` ${kind}` : ""}`;
 };
 const basename = (path) => path.split("/").pop();
+
+// What the header and the settings form say, kept as state so a language switch
+// can re-render them without asking the frame again.
+let linkState = "connecting";
+let lastSensors = null;
+let lastSettings = null;
+
+function renderLink() {
+  $("link-text").textContent = t(`link.${linkState}`);
+}
+
+function renderSensors() {
+  if (!lastSensors) return;
+  const battery = lastSensors.battery;
+  const chip = $("battery-chip");
+  if (battery && battery.present) {
+    const state = battery.charging ? t("sensors.charging") : battery.usb ? t("sensors.usb") : "";
+    chip.textContent =
+      t("sensors.battery", { percent: battery.percent, volts: (battery.mv / 1000).toFixed(2) }) + state;
+    chip.classList.toggle("bad", battery.low);
+    chip.hidden = false;
+  } else {
+    chip.hidden = true;
+  }
+  const ambient = lastSensors.ambient;
+  const climate = $("climate-chip");
+  if (ambient) {
+    climate.textContent = `${Number(ambient.temp_c).toFixed(1)} °C · ${Math.round(ambient.rh_pct)}%`;
+    climate.hidden = false;
+  } else {
+    climate.hidden = true;
+  }
+}
+
+/// Placeholders that describe the *current* settings, not the field's type:
+/// "set — leave blank" is only true while a password is on the frame.
+function applySettingsHints() {
+  if (!lastSettings) return;
+  $("wifi-password").placeholder = lastSettings.wifi?.password_set
+    ? t("settings.keepSet")
+    : t("settings.wifiOpen");
+  $("ai-key").placeholder = lastSettings.ai?.key_set
+    ? t("settings.keepSet")
+    : t("settings.bridgeNoToken");
+  $("web-password").placeholder = lastSettings.web?.password_set
+    ? t("settings.keepSet")
+    : t("settings.pageOpen");
+  for (const option of document.querySelectorAll("#ai-lang option[data-kept]")) {
+    option.textContent = t("settings.unknown", { value: option.value });
+  }
+}
+
+window.addEventListener("easellet-language", () => {
+  renderLink();
+  renderSensors();
+  if (source) render();
+  if (gallery.loaded) {
+    updateGalleryChip();
+    renderGallery();
+  }
+  applySettingsHints();
+});
 
 // --- tabs -----------------------------------------------------------------
 // The hash is the state: a link to #gallery opens the gallery, and the browser's
@@ -377,20 +775,23 @@ const options = () => ({
 function render() {
   if (!source) return;
   frame = packImage(source, previewContext, options());
-  if (frame.length !== FRAME_BYTES) throw new Error(`кадр ${frame.length}`);
+  if (frame.length !== FRAME_BYTES) throw new Error(t("frameSize", { bytes: frame.length }));
   send.disabled = false;
-  $("preview-note").textContent =
-    `${source.width}×${source.height} → ${WIDTH}×${HEIGHT}, ${frame.length} байт готово`;
+  $("preview-note").textContent = t("preview.ready", {
+    width: source.width,
+    height: source.height,
+    bytes: frame.length,
+  });
 }
 
 async function choose(file) {
   if (!file) return;
-  if (!file.type.startsWith("image/")) { say("upload-message", "Это не картинка", "bad"); return; }
+  if (!file.type.startsWith("image/")) { say("upload-message", t("upload.notPicture"), "bad"); return; }
   // createImageBitmap applies EXIF orientation, so a phone photo is not delivered
   // lying on its side.
   source = await createImageBitmap(file);
-  const name = file.name || "из буфера обмена";
-  say("upload-message", `${name}: ${(file.size / 1024).toFixed(0)} КБ`, "");
+  const name = file.name || t("upload.clipboard");
+  say("upload-message", t("upload.selected", { name, kb: (file.size / 1024).toFixed(0) }), "");
   render();
 }
 
@@ -444,7 +845,7 @@ async function pictureFromUrl(url) {
   const answer = await fetch(url, { mode: "cors", credentials: "omit" });
   if (!answer.ok) throw new Error(`HTTP ${answer.status}`);
   const blob = await answer.blob();
-  if (!blob.type.startsWith("image/")) throw new Error("это не картинка");
+  if (!blob.type.startsWith("image/")) throw new Error(t("drop.notPicture"));
   // A fetched blob has no name, so take one from the URL: the upload message
   // should say which picture arrived, and "из буфера обмена" would be a lie.
   let name = "";
@@ -459,26 +860,21 @@ async function pictureFromUrl(url) {
 async function acceptDrop(data) {
   const dropped = droppedPicture(data);
   if (!dropped) {
-    say("upload-message", "В перетаскивании нет картинки — перетащите файл или саму картинку", "bad");
+    say("upload-message", t("drop.empty"), "bad");
     return;
   }
   if (typeof dropped !== "string") return choose(dropped);
-  say("upload-message", "Забираю картинку по ссылке…", "");
+  say("upload-message", t("drop.fetching"), "");
   try {
     return await choose(await pictureFromUrl(dropped));
   } catch (error) {
     // Two different failures deserve two different answers: a link that is not a
     // picture at all, and a site that will not let this page read its pixels.
-    if (/не картинка/.test(String(error))) {
-      say("upload-message", "По этой ссылке не картинка", "bad");
+    if (String(error) === t("drop.notPicture")) {
+      say("upload-message", t("drop.notPicture"), "bad");
       return;
     }
-    say(
-      "upload-message",
-      `Сайт не разрешает браузеру отдать эту картинку странице рамки (${error}). ` +
-        "Сохраните её (правый клик → «Сохранить изображение как…») и перетащите файл.",
-      "bad"
-    );
+    say("upload-message", t("drop.blocked", { error }), "bad");
   }
 }
 
@@ -517,7 +913,7 @@ for (const control of document.querySelectorAll('input[name="mode"], #dither')) 
 send.addEventListener("click", async () => {
   if (!frame) return;
   send.disabled = true;
-  say("upload-message", "Отправляю…", "");
+  say("upload-message", t("upload.sending"), "");
   try {
     const answer = await post("/upload", {
       headers: { "Content-Type": "application/octet-stream" },
@@ -527,7 +923,7 @@ send.addEventListener("click", async () => {
     say("upload-message", text, answer.ok ? "ok" : "bad");
     if (answer.ok) refreshGallery();
   } catch (error) {
-    say("upload-message", `Ошибка: ${error}`, "bad");
+    say("upload-message", t("error", { error }), "bad");
   } finally {
     send.disabled = false;
   }
@@ -551,6 +947,7 @@ const removable = (name) => name.toLowerCase().startsWith(WRITABLE);
 const gallery = {
   dir: "",
   images: [],
+  loaded: false,
   page: 1,
   search: "",
   selected: new Set(),
@@ -607,7 +1004,7 @@ async function fetchFrame(name) {
     throw new Error(text || `${answer.status}`);
   }
   const bytes = new Uint8Array(await answer.arrayBuffer());
-  if (bytes.length !== FRAME_BYTES) throw new Error(`кадр ${bytes.length}`);
+  if (bytes.length !== FRAME_BYTES) throw new Error(t("frameSize", { bytes: bytes.length }));
   remember(name, bytes);
   return bytes;
 }
@@ -637,7 +1034,7 @@ async function loadVisible() {
       context.fillRect(0, 0, WIDTH, HEIGHT);
       context.fillStyle = "#b42318";
       context.font = "24px system-ui, sans-serif";
-      context.fillText("не читается", 24, 48);
+      context.fillText(t("gallery.unreadable"), 24, 48);
     }
   }
 }
@@ -666,7 +1063,7 @@ function card(image) {
   pick.className = "pick";
   pick.hidden = !canRemove;
   pick.checked = gallery.selected.has(image.name);
-  pick.setAttribute("aria-label", `Выбрать ${basename(image.name)}`);
+  pick.setAttribute("aria-label", t("gallery.pick", { name: basename(image.name) }));
   pick.addEventListener("change", () => {
     if (pick.checked) gallery.selected.add(image.name);
     else gallery.selected.delete(image.name);
@@ -687,27 +1084,27 @@ function card(image) {
   bottom.className = "line";
   const showButton = document.createElement("button");
   showButton.className = "small";
-  showButton.textContent = "На экран";
+  showButton.textContent = t("gallery.show");
   showButton.addEventListener("click", () => showNow(image.name, showButton));
   const trash = document.createElement("button");
   trash.className = "small trash";
-  trash.textContent = "Удалить";
+  trash.textContent = t("gallery.delete");
   if (!canRemove) {
     // A vendor picture: say why the button is absent rather than showing a
     // control the frame would refuse.
-    trash.textContent = "не удаляется";
+    trash.textContent = t("gallery.keep");
     trash.disabled = true;
-    trash.title = `Файлы вне ${WRITABLE.slice(0, -1)} принадлежат прошивке и только читаются`;
+    trash.title = t("gallery.keepTitle", { dir: WRITABLE.slice(0, -1) });
   }
   trash.addEventListener("click", async () => {
     if (!canRemove) return;
-    if (!arm(trash, "Удалить", "Точно?")) return;
+    if (!arm(trash, t("gallery.delete"), t("gallery.confirm"))) return;
     trash.disabled = true;
     await remove([image.name]);
     trash.disabled = false;
   });
   const size = document.createElement("span");
-  size.textContent = `${Math.round(image.bytes / 1024)} КБ`;
+  size.textContent = t("gallery.size", { kb: Math.round(image.bytes / 1024) });
   bottom.append(size, showButton, trash);
   caption.append(top, bottom);
 
@@ -723,10 +1120,10 @@ function renderGallery() {
 
   if (gallery.images.length === 0) {
     empty.hidden = false;
-    empty.textContent = `В папке ${gallery.dir || "EASELTEST/UPLOADS"} пока нет картинок — отправьте первую.`;
+    empty.textContent = t("gallery.empty", { dir: gallery.dir || "EASELTEST/UPLOADS" });
   } else if (images.length === 0) {
     empty.hidden = false;
-    empty.textContent = `По запросу «${gallery.search}» ничего нет.`;
+    empty.textContent = t("gallery.noMatch", { search: gallery.search });
   } else {
     empty.hidden = true;
   }
@@ -767,16 +1164,28 @@ function updateSelection() {
   const button = $("gallery-remove");
   button.disabled = count === 0;
   button.classList.toggle("danger", count > 0);
-  button.textContent = count === 0 ? "Удалить выбранные" : `Удалить выбранные (${count})`;
+  button.textContent =
+    count === 0 ? t("gallery.remove") : t("gallery.removeCount", { count });
   const page = pageImages().filter((image) => removable(image.name));
   $("gallery-select-page").checked = page.length > 0 && page.every((image) => gallery.selected.has(image.name));
   $("gallery-select-page").disabled = page.length === 0;
 }
 
+/// The chip is rebuilt from the same state the grid uses, so a language switch
+/// and a fresh listing cannot disagree about what the card holds.
+function updateGalleryChip() {
+  const count = gallery.images.length;
+  $("gallery-chip").textContent =
+    count === 0 ? t("gallery.chip.empty") : t("gallery.chip.count", { count, dir: gallery.dir });
+  const badge = $("tab-count");
+  badge.hidden = count === 0;
+  badge.textContent = String(count);
+}
+
 async function refreshGallery() {
   const empty = $("frames-empty");
   empty.hidden = false;
-  empty.textContent = "Читаю карточку…";
+  empty.textContent = t("gallery.reading");
   try {
     const answer = await fetch("/gallery");
     const data = await answer.json();
@@ -786,22 +1195,25 @@ async function refreshGallery() {
     for (const name of [...gallery.selected]) {
       if (!gallery.images.some((image) => image.name === name)) gallery.selected.delete(name);
     }
-    const count = gallery.images.length;
-    $("gallery-chip").textContent = count === 0 ? "галерея пуста" : `${count} в ${gallery.dir}`;
-    const badge = $("tab-count");
-    badge.hidden = count === 0;
-    badge.textContent = String(count);
+    gallery.loaded = true;
+    updateGalleryChip();
     renderGallery();
     loadGalleryPage();
   } catch (error) {
     empty.hidden = false;
-    empty.textContent = "Карточка недоступна";
-    $("gallery-chip").textContent = "галерея?";
+    empty.textContent = t("gallery.unavailable");
+    $("gallery-chip").textContent = t("gallery.chip.unavailable");
   }
 }
 
 async function remove(names) {
-  say("gallery-message", `Удаляю ${names.length === 1 ? basename(names[0]) : names.length + " картинок"}…`, "");
+  say(
+    "gallery-message",
+    names.length === 1
+      ? t("gallery.deleting", { name: basename(names[0]) })
+      : t("gallery.deletingMany", { count: names.length }),
+    ""
+  );
   const failed = [];
   for (const name of names) {
     try {
@@ -816,16 +1228,13 @@ async function remove(names) {
     }
   }
   const count = gallery.images.length;
-  $("gallery-chip").textContent = count === 0 ? "галерея пуста" : `${count} в ${gallery.dir}`;
-  const badge = $("tab-count");
-  badge.hidden = count === 0;
-  badge.textContent = String(count);
+  updateGalleryChip();
   renderGallery();
   say(
     "gallery-message",
     failed.length === 0
-      ? `Удалено: ${names.length}. Осталось ${count}.`
-      : `Не удалось: ${failed.join("; ")}`,
+      ? t("gallery.deleted", { count: names.length, left: count })
+      : t("gallery.failed", { list: failed.join("; ") }),
     failed.length === 0 ? "ok" : "bad"
   );
   if (failed.length > 0) {
@@ -833,7 +1242,7 @@ async function remove(names) {
     // another tab, or from the console, between this page drawing the card and
     // the click. The device is the authority on what is on the card, so ask it
     // again instead of leaving a card that is no longer there.
-    const message = `Не удалось: ${failed.join("; ")}`;
+    const message = t("gallery.failed", { list: failed.join("; ") });
     await refreshGallery();
     say("gallery-message", message, "bad");
   }
@@ -841,13 +1250,13 @@ async function remove(names) {
 
 async function showNow(path, button) {
   button.disabled = true;
-  say("gallery-message", "Перерисовываю… (около 30 секунд)", "");
+  say("gallery-message", t("gallery.drawing"), "");
   try {
     const answer = await post(`/show?path=${encodeURIComponent(path)}`);
     const text = (await answer.text()).trim();
     say("gallery-message", text, answer.ok ? "ok" : "bad");
   } catch (error) {
-    say("gallery-message", `Ошибка: ${error}`, "bad");
+    say("gallery-message", t("error", { error }), "bad");
   } finally {
     button.disabled = false;
   }
@@ -883,7 +1292,14 @@ $("gallery-select-page").addEventListener("change", (event) => {
 $("gallery-remove").addEventListener("click", async () => {
   const names = [...gallery.selected];
   const button = $("gallery-remove");
-  if (!arm(button, `Удалить выбранные (${names.length})`, `Точно удалить ${names.length}?`)) return;
+  if (
+    !arm(
+      button,
+      t("gallery.removeCount", { count: names.length }),
+      t("gallery.confirmCount", { count: names.length })
+    )
+  )
+    return;
   button.disabled = true;
   await remove(names);
   button.disabled = gallery.selected.size === 0;
@@ -909,7 +1325,7 @@ const setValue = (name, value) => {
     if (value && ![...field.options].some((option) => option.value === value)) {
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = `${value} (не из списка)`;
+      option.textContent = t("settings.unknown", { value });
       option.dataset.kept = "1";
       field.append(option);
     }
@@ -938,18 +1354,11 @@ async function loadSettings() {
     setValue("gallery.secs", data.gallery.secs);
     setValue("gallery.auto", data.gallery.auto);
     setValue("web.password", "");
-    $("wifi-password").placeholder = data.wifi.password_set
-      ? "задан — оставьте пустым"
-      : "сеть без пароля";
-    $("ai-key").placeholder = data.ai.key_set
-      ? "задан — оставьте пустым"
-      : "мост без токена";
-    $("web-password").placeholder = data.web.password_set
-      ? "задан — оставьте пустым"
-      : "страница открыта";
+    lastSettings = data;
+    applySettingsHints();
     say("settings-message", "", "");
   } catch (error) {
-    say("settings-message", `Не смог прочитать настройки: ${error}`, "bad");
+    say("settings-message", t("settings.readError", { error }), "bad");
   }
 }
 
@@ -957,7 +1366,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = $("save-settings");
   button.disabled = true;
-  say("settings-message", "Сохраняю…", "");
+  say("settings-message", t("settings.saving"), "");
   const body = new URLSearchParams();
   for (const field of form.elements) {
     if (!field.name) continue;
@@ -980,7 +1389,7 @@ form.addEventListener("submit", async (event) => {
       refreshGallery();
     }
   } catch (error) {
-    say("settings-message", `Ошибка: ${error}`, "bad");
+    say("settings-message", t("error", { error }), "bad");
   } finally {
     button.disabled = false;
   }
@@ -994,11 +1403,12 @@ $("reload-settings").addEventListener("click", loadSettings);
   try {
     const answer = await fetch("/status");
     $("link-dot").className = answer.ok ? "dot on" : "dot off";
-    $("link-text").textContent = answer.ok ? "на связи" : "ошибка";
+    linkState = answer.ok ? "online" : "error";
   } catch {
     $("link-dot").className = "dot off";
-    $("link-text").textContent = "нет связи";
+    linkState = "down";
   }
+  renderLink();
   refreshGallery();
   loadSettings();
   loadSensors();
@@ -1010,25 +1420,8 @@ async function loadSensors() {
   try {
     const answer = await fetch("/sensors");
     if (!answer.ok) return;
-    const sensors = await answer.json();
-    const battery = sensors.battery;
-    const chip = $("battery-chip");
-    if (battery && battery.present) {
-      const state = battery.charging ? " · заряжается" : battery.usb ? " · от USB" : "";
-      chip.textContent = `батарея ${battery.percent}% (${(battery.mv / 1000).toFixed(2)} В)${state}`;
-      chip.classList.toggle("bad", battery.low);
-      chip.hidden = false;
-    } else {
-      chip.hidden = true;
-    }
-    const ambient = sensors.ambient;
-    const climate = $("climate-chip");
-    if (ambient) {
-      climate.textContent = `${Number(ambient.temp_c).toFixed(1)} °C · ${Math.round(ambient.rh_pct)}%`;
-      climate.hidden = false;
-    } else {
-      climate.hidden = true;
-    }
+    lastSensors = await answer.json();
+    renderSensors();
   } catch {
     // The header simply keeps its last values; the link chip reports outages.
   }
