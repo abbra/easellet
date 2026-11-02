@@ -109,6 +109,8 @@ pub enum Command {
     GalleryStatus,
     /// Report whether the upload page is listening.
     WebStatus,
+    /// Which app slot runs, what an upload would replace, and how big it may be.
+    Ota,
     /// Start the upload server now instead of waiting for a radio event.
     WebStart,
     WebStop,
@@ -299,6 +301,7 @@ impl LineBuffer {
                     b"gallery" | b"gallery status" => Some(Command::GalleryStatus),
                     b"gallery stop" => Some(Command::GalleryStop),
                     b"gallery next" => Some(Command::GalleryNext),
+                    b"ota" | b"ota status" => Some(Command::Ota),
                     b"web" | b"web status" => Some(Command::WebStatus),
                     b"web start" => Some(Command::WebStart),
                     b"web stop" => Some(Command::WebStop),
@@ -537,6 +540,8 @@ mod tests {
         assert_eq!(feed(b"gallery stop\n"), [Command::GalleryStop]);
         assert_eq!(feed(b"gallery next\n"), [Command::GalleryNext]);
         assert_eq!(feed(b"web\n"), [Command::WebStatus]);
+        assert_eq!(feed(b"ota\n"), [Command::Ota]);
+        assert_eq!(feed(b"ota status\n"), [Command::Ota]);
         assert_eq!(feed(b"web stop\n"), [Command::WebStop]);
         assert_eq!(
             feed(b"gallery start\n"),
@@ -571,7 +576,10 @@ mod tests {
         // Absolute paths and backslashes are refused by the same rule the image
         // loader applies, so neither can escape the card root.
         assert_eq!(feed(b"gallery start /etc 60\n"), [Command::Unknown]);
-        assert_eq!(feed(b"gallery start ..\\EASELTEST 60\n"), [Command::Unknown]);
+        assert_eq!(
+            feed(b"gallery start ..\\EASELTEST 60\n"),
+            [Command::Unknown]
+        );
     }
 
     #[test]

@@ -30,12 +30,21 @@ CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
 CONFIG_PM_ENABLE=n
 CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE=n
 
-# Wi-Fi and lwIP do not fit in the 1 MiB single-app factory partition, so the
-# larger single-app layout (1.5 MiB factory, same 0x10000 offset) is used.
-# esp-idf-sys does not support CONFIG_PARTITION_TABLE_CUSTOM: it resolves a custom
-# CSV against its own generated project directory, not against this one.
+# Wi-Fi and lwIP do not fit in the 1 MiB single-app factory partition. The
+# flashed layout is `partitions.csv` (two 3 MB slots, written at 0x8000 by
+# esptool, see README); it cannot be named here because esp-idf-sys resolves
+# CONFIG_PARTITION_TABLE_CUSTOM_FILENAME against its own generated project, not
+# against this one. This value only decides what the build's own size check
+# measures, so it stays at the larger single-app layout - the same offset and a
+# smaller size than a real slot, which errs on the safe side.
 CONFIG_PARTITION_TABLE_SINGLE_APP=n
 CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# A new image is written by the portal into the other slot, so the bootloader
+# must be able to undo it: an image that never reaches
+# `esp_ota_mark_app_valid_cancel_rollback` is replaced by the previous one on
+# the next reset. The frame marks itself valid once it is operable (`main`).
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 # The assistant talks to a LAN bridge over plain HTTP. HTTPS stays compiled out,
 # so a https:// ai.url fails loudly instead of pulling a certificate bundle and a

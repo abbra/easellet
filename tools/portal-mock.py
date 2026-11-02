@@ -61,6 +61,18 @@ class State:
         # must not offer to delete them, because the firmware would refuse.
         self.vendor = ["01_SYS~1/00_INIT.BMP", "06_USE~1/800X480.BMP"]
         self.next_upload = count + 1
+        # The same document `/ota` serves from the firmware: two 3 MB slots, the
+        # frame booted from the first, the second empty.
+        self.firmware = {
+            "version": "0.1.0",
+            "running": "ota_0",
+            "state": "valid",
+            "other": "ota_1",
+            "other_version": None,
+            "max_bytes": 0x300000,
+        }
+        # What a POST /ota received, so the harness can see the page sent it.
+        self.installed: bytes | None = None
         # The same document `/settings` serves from the firmware.
         self.settings = {
             "wifi": {"ssid": "home", "password_set": True, "auto": True},
@@ -187,8 +199,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.body(
                 200,
                 f"OK easellet-upload frame_bytes={FRAME_BYTES} "
-                "routes=/ /el6.mjs /gallery /image /upload /show /delete /settings /status\n",
+                "routes=/ /el6.mjs /gallery /image /upload /show /delete /settings /sensors /ota /status\n",
             )
+        if route == "/ota":
+            return self.body(200, json.dumps(self.state.firmware), "application/json")
         if route == "/gallery":
             return self.body(
                 200,
@@ -243,6 +257,22 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 f"OK saved={name} bytes={len(payload)} paint=started\n",
             )
+        if route == "/ota":
+            # The same three checks the firmware makes before writing flash: a
+            # body was announced, it fits the slot, and it starts like an image.
+            if self.headers.get("Content-Length") is None:
+                return self.body(411, "ERR send Content-Length: the size of the .bin\n")
+            if len(payload) > self.state.firmware["max_bytes"]:
+                return self.body(
+                    413, f"ERR firmware: the app slot holds {self.state.firmware['max_bytes']} bytes\n"
+                )
+            if not payload.startswith(b"\xe9"):
+                return self.body(
+                    400, "ERR firmware: that is not an app image (it does not start with 0xE9)\n"
+                )
+            self.state.installed = payload
+            self.state.firmware["other_version"] = "uploaded"
+            return self.body(200, "OK firmware %d bytes written to ota_1; rebooting\n" % len(payload))
         if route == "/delete":
             path = self.query().get("path", "")
             return self.delete(path)

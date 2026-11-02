@@ -197,6 +197,7 @@
       <span data-i18n="tab.gallery">Gallery</span> <span class="count" id="tab-count" hidden>0</span>
     </a>
     <a href="#settings" role="tab" id="tab-link-settings" aria-selected="false" aria-controls="tab-settings"><span data-i18n="tab.settings">Settings</span></a>
+    <a href="#firmware" role="tab" id="tab-link-firmware" aria-selected="false" aria-controls="tab-firmware"><span data-i18n="tab.firmware">Firmware</span></a>
   </nav>
 
   <section class="card" id="tab-photos" role="tabpanel" aria-labelledby="tab-link-photos">
@@ -323,6 +324,29 @@
       </div>
       <p class="message" id="settings-message" style="grid-column:1/-1"></p>
     </form>
+  </section>
+
+  <section class="card" id="tab-firmware" role="tabpanel" aria-labelledby="tab-link-firmware" hidden>
+    <h2 data-i18n="firmware.title">Firmware</h2>
+    <p class="note" style="margin:0 0 1rem" data-i18n="firmware.intro">
+      A new image is written to the slot the frame is not running from, and the
+      frame restarts into it. A build that does not start is replaced by the one
+      running now on the next reset — a failed update costs a minute, not the frame.
+    </p>
+    <div class="chips" id="firmware-facts"></div>
+    <div class="field" style="margin-top:1.2rem">
+      <label for="firmware-file" data-i18n="firmware.file">Firmware image (.bin)</label>
+      <input id="firmware-file" type="file" accept=".bin,application/octet-stream">
+    </div>
+    <div class="row" style="margin-top:.9rem">
+      <button class="primary" id="firmware-send" disabled data-i18n="firmware.send">Install and restart</button>
+    </div>
+    <p class="message" id="firmware-message"></p>
+    <p class="note" data-i18n-html="firmware.where">
+      The image is <code>target/xtensa-esp32s3-espidf/release/easellet.bin</code>
+      from a release build. The first OTA needs a serial flash of the bootloader,
+      the partition table and the app: see “Flashing” in <code>README.md</code>.
+    </p>
   </section>
 
   <footer data-i18n-html="footer.note">
@@ -728,6 +752,7 @@ window.addEventListener("easellet-language", () => {
     updateGalleryChip();
     renderGallery();
   }
+  renderFirmware();
   applySettingsHints();
 });
 
@@ -735,7 +760,7 @@ window.addEventListener("easellet-language", () => {
 // The hash is the state: a link to #gallery opens the gallery, and the browser's
 // back button works without any history bookkeeping.
 
-const TABS = ["photos", "gallery", "settings"];
+const TABS = ["photos", "gallery", "settings", "firmware"];
 
 function showTab(name) {
   if (!TABS.includes(name)) name = "photos";
@@ -753,8 +778,10 @@ function currentTab() {
 window.addEventListener("hashchange", () => {
   showTab(currentTab());
   if (currentTab() === "gallery") loadGalleryPage();
+  if (currentTab() === "firmware") loadFirmware();
 });
 showTab(currentTab());
+if (currentTab() === "firmware") loadFirmware();
 
 // --- upload ---------------------------------------------------------------
 
@@ -1304,6 +1331,126 @@ $("gallery-remove").addEventListener("click", async () => {
   await remove(names);
   button.disabled = gallery.selected.size === 0;
 });
+
+// --- firmware -------------------------------------------------------------
+// Which slot runs, and the other one offered to a `.bin`. Nothing is uploaded
+// until the button is armed twice: an update reboots the frame, and no single
+// accidental click should do that to a picture on the wall.
+
+const firmwareInput = $("firmware-file");
+const firmwareSend = $("firmware-send");
+let firmwareInfo = null;
+let firmwareFile = null;
+
+async function loadFirmware() {
+  try {
+    const answer = await fetch("/ota", { cache: "no-store" });
+    if (!answer.ok) throw new Error((await answer.text()).trim());
+    firmwareInfo = await answer.json();
+    renderFirmware();
+  } catch (error) {
+    say("firmware-message", t("firmware.readError", { error }), "bad");
+  }
+}
+
+function renderFirmware() {
+  if (!firmwareInfo) return;
+  const info = firmwareInfo;
+  const facts = [
+    t("firmware.fact.version", { version: info.version }),
+    t("firmware.fact.slot", { slot: info.running, state: t(`firmware.state.${info.state}`) }),
+    t("firmware.fact.next", {
+      slot: info.other,
+      version: info.other_version ?? t("firmware.empty"),
+    }),
+    t("firmware.fact.max", { mb: (info.max_bytes / 1048576).toFixed(1) }),
+  ];
+  $("firmware-facts").replaceChildren(
+    ...facts.map((fact) => {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.textContent = fact;
+      return chip;
+    }),
+  );
+}
+
+/// The slot's size decides whether the chosen file can even be sent, so it is
+/// checked against the frame's own number rather than a constant in this page.
+function checkFirmwareFile() {
+  firmwareSend.disabled = true;
+  if (!firmwareFile) return;
+  const max = firmwareInfo?.max_bytes ?? 0;
+  if (max && firmwareFile.size > max) {
+    say(
+      "firmware-message",
+      t("firmware.tooLarge", {
+        kb: (firmwareFile.size / 1024).toFixed(0),
+        mb: (max / 1048576).toFixed(1),
+      }),
+      "bad",
+    );
+    return;
+  }
+  firmwareSend.disabled = false;
+  say(
+    "firmware-message",
+    t("upload.selected", { name: firmwareFile.name, kb: (firmwareFile.size / 1024).toFixed(0) }),
+    "",
+  );
+}
+
+firmwareInput.addEventListener("change", () => {
+  firmwareFile = firmwareInput.files[0] ?? null;
+  renderFirmware();
+  checkFirmwareFile();
+});
+
+firmwareSend.addEventListener("click", async () => {
+  if (!firmwareFile) return;
+  if (!arm(firmwareSend, t("firmware.send"), t("firmware.confirm"))) return;
+  firmwareSend.disabled = true;
+  firmwareInput.disabled = true;
+  say("firmware-message", t("firmware.sending"), "");
+  try {
+    const answer = await post("/ota", {
+      headers: { "Content-Type": "application/octet-stream" },
+      body: firmwareFile,
+    });
+    const text = (await answer.text()).trim();
+    if (!answer.ok) {
+      say("firmware-message", text, "bad");
+      firmwareSend.disabled = false;
+      firmwareInput.disabled = false;
+      return;
+    }
+    await waitForFrame(t("firmware.restart"));
+  } catch (error) {
+    // A dropped connection is what a successful upload looks like when the
+    // frame resets before the browser finishes reading the answer: whether the
+    // image was installed is only answered by the frame coming back.
+    await waitForFrame(t("firmware.lost", { error }));
+  }
+});
+
+/// Wait for the frame to answer again, then reload into the new state. Sixty
+/// attempts of two seconds is longer than a reboot takes, including the first
+/// boot of an image that has to erase nothing.
+async function waitForFrame(note) {
+  say("firmware-message", `${note} ${t("firmware.waiting")}`, "ok");
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      if ((await fetch("/status", { cache: "no-store" })).ok) {
+        location.reload();
+        return;
+      }
+    } catch {
+      // Still restarting.
+    }
+  }
+  say("firmware-message", t("firmware.noReturn"), "bad");
+}
 
 // --- settings -------------------------------------------------------------
 

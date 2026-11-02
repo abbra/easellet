@@ -68,6 +68,11 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 /// seconds would hold the page for hours; a real upload is 192 KB on a LAN.
 const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
+/// A firmware upload gets its own allowance: 1 MB arrives in a second on a LAN,
+/// but every 4 KB of it waits for a flash write, and erasing a slot before the
+/// write is the slowest thing this frame does on purpose.
+const OTA_DEADLINE: Duration = Duration::from_secs(180);
+
 /// Header the portal adds to every POST; its value is not checked, only that a
 /// page could set it, which a cross-site page cannot without a preflight.
 pub const POST_HEADER: &str = "X-Easellet";
@@ -82,6 +87,11 @@ const UPLOAD_WAIT: Duration = Duration::from_secs(30);
 /// Accept-loop tick. Non-blocking accept plus a short sleep, so `stop` is
 /// honoured promptly instead of waiting for the next client.
 const TICK: Duration = Duration::from_millis(25);
+
+/// What `GET /status` advertises. A route missing here is a route nobody finds,
+/// so the page's own calls are checked against it in the tests.
+const ROUTES: &str =
+    "routes=/ /el6.mjs /gallery /image /upload /show /delete /settings /sensors /ota /status";
 
 const PAGE: &str = include_str!("../web/index.html");
 const CONVERTER: &str = include_str!("../tools/el6.mjs");
@@ -131,6 +141,29 @@ pub enum Job {
     },
 }
 
+/// What the portal needs from a firmware updater, handed in by `main` rather
+/// than called directly: this module is host-tested on its own and knows nothing
+/// about ESP-IDF (`src/ota.rs` owns that).
+pub trait Firmware: Send {
+    /// `GET /ota`: the state as the JSON document the page reads.
+    fn info(&self) -> Result<String, String>;
+    /// `POST /ota`: write `length` bytes from `read` into the inactive slot. The
+    /// answer is the body; a refusal carries its own HTTP status, reason phrase
+    /// and body.
+    fn install<'a>(&self, length: usize, read: &'a mut BodyReader<'a>) -> Refusal;
+    /// Leave the frame. Called once the answer is on the wire; a method on the
+    /// updater because resetting the chip is as much ESP-IDF as writing it.
+    fn restart(&self) -> !;
+}
+
+/// Fills the buffer it is given and says how many bytes it wrote; zero means the
+/// body ended early. The object's lifetime is the borrow's, so a reader can hold
+/// the connection it reads from.
+pub type BodyReader<'a> = dyn FnMut(&mut [u8]) -> Result<usize, String> + 'a;
+
+/// A refused firmware upload: `(status, reason phrase, body)`.
+pub type Refusal = Result<String, (u16, &'static str, String)>;
+
 /// A running listener. Dropping it asks the thread to stop.
 pub struct Server {
     stop: Arc<AtomicBool>,
@@ -175,7 +208,12 @@ impl std::fmt::Debug for Server {
 ///
 /// `password` is the `web.password` setting: `None` serves the page to anyone on
 /// the network, which is the default for a home frame.
-pub fn start(port: u16, password: Option<String>, jobs: Sender<Job>) -> Result<Server, String> {
+pub fn start(
+    port: u16,
+    password: Option<String>,
+    jobs: Sender<Job>,
+    firmware: Box<dyn Firmware + Send>,
+) -> Result<Server, String> {
     let listener = bind(port)?;
     listener
         .set_nonblocking(true)
@@ -189,7 +227,7 @@ pub fn start(port: u16, password: Option<String>, jobs: Sender<Job>) -> Result<S
         // pthread stack is smaller than what a recursive-free parser plus a
         // temporary `String` comfortably wants.
         .stack_size(12 * 1024)
-        .spawn(move || accept_loop(listener, jobs, flag, password))
+        .spawn(move || accept_loop(listener, jobs, flag, password, firmware))
         .map_err(|error| format!("ERR web thread: {error}"))?;
     Ok(Server { stop, port, locked })
 }
@@ -215,13 +253,14 @@ fn accept_loop(
     jobs: Sender<Job>,
     stop: Arc<AtomicBool>,
     password: Option<String>,
+    firmware: Box<dyn Firmware + Send>,
 ) {
     while !stop.load(Ordering::Relaxed) {
         match listener.accept() {
             Ok((stream, _peer)) => {
                 // A failed request is the client's problem, not the frame's: the
                 // loop keeps listening either way.
-                let _ = serve(stream, &jobs, password.as_deref());
+                let _ = serve(stream, &jobs, password.as_deref(), &*firmware);
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => thread::sleep(TICK),
             Err(_) => thread::sleep(TICK),
@@ -320,7 +359,12 @@ pub fn parse_head(head: &str) -> Result<Request, String> {
     })
 }
 
-fn serve(stream: TcpStream, jobs: &Sender<Job>, password: Option<&str>) -> Result<(), String> {
+fn serve<F: Firmware + ?Sized>(
+    stream: TcpStream,
+    jobs: &Sender<Job>,
+    password: Option<&str>,
+    firmware: &F,
+) -> Result<(), String> {
     stream
         .set_write_timeout(Some(CLIENT_TIMEOUT))
         .map_err(|error| format!("ERR web timeout: {error}"))?;
@@ -372,9 +416,13 @@ fn serve(stream: TcpStream, jobs: &Sender<Job>, password: Option<&str>) -> Resul
     }
 
     match (request.method, request.path.as_str()) {
-        (Method::Get, "/" | "/index.html") => {
-            respond(&mut incoming.stream, 200, "OK", "text/html; charset=utf-8", PAGE.as_bytes())
-        }
+        (Method::Get, "/" | "/index.html") => respond(
+            &mut incoming.stream,
+            200,
+            "OK",
+            "text/html; charset=utf-8",
+            PAGE.as_bytes(),
+        ),
         (Method::Get, "/el6.mjs") => respond(
             &mut incoming.stream,
             200,
@@ -387,12 +435,11 @@ fn serve(stream: TcpStream, jobs: &Sender<Job>, password: Option<&str>) -> Resul
             200,
             "OK",
             "text/plain; charset=utf-8",
-            format!(
-                "OK easellet-upload frame_bytes={FRAME_BYTES} routes=/ /el6.mjs /gallery /image /upload /show /delete /settings /sensors /status\n"
-            )
-            .as_bytes(),
+            format!("OK easellet-upload frame_bytes={FRAME_BYTES} {ROUTES}\n").as_bytes(),
         ),
         (Method::Post, "/upload") => upload(&mut incoming, &request, jobs),
+        (Method::Get, "/ota") => ota_info(&mut incoming.stream, firmware),
+        (Method::Post, "/ota") => ota_upload(&mut incoming, &request, firmware),
         (Method::Get, "/gallery") => list(&mut incoming.stream, jobs),
         (Method::Get, "/image") => image(&mut incoming.stream, &request, jobs),
         (Method::Post, "/show") => show(&mut incoming.stream, &request, jobs),
@@ -400,7 +447,13 @@ fn serve(stream: TcpStream, jobs: &Sender<Job>, password: Option<&str>) -> Resul
         (Method::Get, "/settings") => settings(&mut incoming.stream, jobs),
         (Method::Get, "/sensors") => sensors(&mut incoming.stream, jobs),
         (Method::Post, "/settings") => save_settings(&mut incoming, &request, jobs),
-        (Method::Get, _) => respond(&mut incoming.stream, 404, "Not Found", "text/plain", b"ERR not here\n"),
+        (Method::Get, _) => respond(
+            &mut incoming.stream,
+            404,
+            "Not Found",
+            "text/plain",
+            b"ERR not here\n",
+        ),
         (Method::Post, _) => respond(
             &mut incoming.stream,
             404,
@@ -475,6 +528,77 @@ fn upload(incoming: &mut Incoming, request: &Request, jobs: &Sender<Job>) -> Res
             "Gateway Timeout",
             "text/plain",
             b"ERR the frame did not answer in time\n",
+        ),
+    }
+}
+
+/// What the firmware page shows before anyone uploads anything.
+fn ota_info<F: Firmware + ?Sized>(stream: &mut TcpStream, firmware: &F) -> Result<(), String> {
+    let reply = match firmware.info() {
+        Ok(document) => document,
+        Err(error) => error,
+    };
+    let ok = reply.starts_with('{');
+    respond(
+        stream,
+        if ok { 200 } else { 500 },
+        if ok { "OK" } else { "Internal Server Error" },
+        if ok {
+            "application/json; charset=utf-8"
+        } else {
+            "text/plain; charset=utf-8"
+        },
+        reply.as_bytes(),
+    )
+}
+
+/// Take the firmware image, stream it into the inactive slot, and restart into
+/// it. Writes happen here rather than through the main loop: nothing on the card
+/// or the panel is involved, and a 1 MB body cannot be handed over whole.
+fn ota_upload<F: Firmware + ?Sized>(
+    incoming: &mut Incoming,
+    request: &Request,
+    firmware: &F,
+) -> Result<(), String> {
+    let Some(length) = request.content_length else {
+        return respond(
+            &mut incoming.stream,
+            411,
+            "Length Required",
+            "text/plain",
+            b"ERR send Content-Length: the size of the .bin\n",
+        );
+    };
+    // A firmware upload is the one request that outlives the general deadline:
+    // the socket waits while flash erases and writes.
+    incoming.allow(OTA_DEADLINE);
+    let result = firmware.install(length, &mut |chunk| {
+        incoming
+            .read_exact(chunk)
+            .map(|()| chunk.len())
+            .map_err(|error| error.to_string())
+    });
+    match result {
+        Ok(message) => {
+            respond(
+                &mut incoming.stream,
+                200,
+                "OK",
+                "text/plain; charset=utf-8",
+                message.as_bytes(),
+            )?;
+            // The answer must leave the frame before the frame leaves: TCP data
+            // still in the kernel is dropped by a reset, and the person would
+            // see a failed upload that actually succeeded.
+            thread::sleep(Duration::from_millis(500));
+            firmware.restart()
+        }
+        Err((status, reason, message)) => respond(
+            &mut incoming.stream,
+            status,
+            reason,
+            "text/plain; charset=utf-8",
+            message.as_bytes(),
         ),
     }
 }
@@ -915,6 +1039,12 @@ impl Incoming {
         }
     }
 
+    /// Give the rest of the request more time: the deadline is one number for
+    /// the whole connection, and a firmware upload has to wait for flash.
+    fn allow(&mut self, extra: Duration) {
+        self.deadline = Instant::now() + extra;
+    }
+
     /// One socket read, its timeout trimmed to what is left of the deadline.
     fn read_socket(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         let left = self.deadline.saturating_duration_since(Instant::now());
@@ -998,6 +1128,23 @@ mod tests {
         )
         .unwrap();
         assert!(!plain.same_origin);
+    }
+
+    #[test]
+    fn the_page_and_the_status_line_agree_on_the_routes() {
+        for route in ["/ota", "/settings", "/gallery", "/sensors"] {
+            assert!(ROUTES.contains(route), "{route} missing from GET /status");
+            assert!(
+                PAGE.contains(&format!("fetch(\"{route}\"")),
+                "the page does not read {route}"
+            );
+        }
+        for route in ["/upload", "/settings", "/ota"] {
+            assert!(
+                PAGE.contains(&format!("post(\"{route}\"")),
+                "the page does not post {route}"
+            );
+        }
     }
 
     #[test]
@@ -1096,10 +1243,10 @@ mod tests {
     #[test]
     fn a_basic_credential_yields_the_password() {
         // btoa("frame:easellet-lan")
-        let header = "Basic ZnJhbWU6cGhvdG9mcmFtZS1sYW4=";
+        let header = "Basic ZnJhbWU6ZWFzZWxsZXQtbGFu";
         assert_eq!(basic_password(header).as_deref(), Some("easellet-lan"));
         assert_eq!(
-            basic_password("basic ZnJhbWU6cGhvdG9mcmFtZS1sYW4=").as_deref(),
+            basic_password("basic ZnJhbWU6ZWFzZWxsZXQtbGFu").as_deref(),
             Some("easellet-lan")
         );
         // No colon, wrong scheme, or broken base64 is simply not a credential.
@@ -1128,11 +1275,11 @@ mod tests {
     #[test]
     fn an_authorization_header_is_parsed() {
         let head =
-            "GET /settings HTTP/1.1\r\nAuthorization: Basic ZnJhbWU6cGhvdG9mcmFtZS1sYW4=\r\n\r\n";
+            "GET /settings HTTP/1.1\r\nAuthorization: Basic ZnJhbWU6ZWFzZWxsZXQtbGFu\r\n\r\n";
         let request = parse_head(head).unwrap();
         assert_eq!(
             request.authorization.as_deref(),
-            Some("Basic ZnJhbWU6cGhvdG9mcmFtZS1sYW4=")
+            Some("Basic ZnJhbWU6ZWFzZWxsZXQtbGFu")
         );
         assert_eq!(
             parse_head("GET / HTTP/1.1\r\n\r\n").unwrap().authorization,
@@ -1152,7 +1299,8 @@ mod tests {
     #[test]
     fn a_delete_request_names_one_picture() {
         let head =
-            parse_head("POST /delete?path=EASELTEST%2FUPLOADS%2FUP0001.EL6 HTTP/1.1\r\n\r\n").unwrap();
+            parse_head("POST /delete?path=EASELTEST%2FUPLOADS%2FUP0001.EL6 HTTP/1.1\r\n\r\n")
+                .unwrap();
         assert_eq!(head.method, Method::Post);
         assert_eq!(head.path, "/delete");
         assert_eq!(

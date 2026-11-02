@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 source scripts/env.sh
 cargo fmt --check
 # Console parser is pure std; test natively without trying to run Xtensa binaries.
-for module in clock config diag image pcm bridge vad gallery web buttons power actions; do
+for module in clock config diag image pcm bridge vad gallery web buttons power actions firmware; do
     rustc --edition 2024 --test "src/$module.rs" -o ".tools/$module-tests"
     ".tools/$module-tests"
 done
@@ -67,7 +67,43 @@ echo "== opendisplay-proto (host) =="
 # the dev image passed the 1500 KiB factory partition while the voice assistant
 # was being added, and a build that cannot be flashed is still worth building.
 # Cargo calls the development profile `dev` but puts its output in `debug`.
-FACTORY_BYTES=$((0x177000))
+#
+# The ceiling comes from `partitions.csv`, the table the frame is flashed with,
+# not from sdkconfig: the app is built as a raw image and the table is written
+# at 0x8000 by esptool, so a build that fits sdkconfig's single-app layout can
+# still be too large for a real slot. Two equal app slots are also what OTA
+# needs, so a table that lost one fails here instead of at the first upload.
+read -r SLOT_BYTES SLOTS <<< "$(python3 - <<'PY'
+import re
+
+slots = []
+for line in open("partitions.csv", encoding="utf-8"):
+    fields = [field.strip() for field in line.split(",")]
+    if line.lstrip().startswith("#") or len(fields) < 5 or fields[1] != "app":
+        continue
+    match = re.fullmatch(r"(0x[0-9a-fA-F]+|[0-9]+)([KkMm]?)", fields[4])
+    size = int(match.group(1), 0)
+    slots.append(size * {"": 1, "k": 1024, "m": 1024 * 1024}[match.group(2).lower()])
+
+print(max(slots) if slots else 0, len(slots))
+PY
+)"
+if [ "$SLOTS" -lt 2 ]; then
+    echo "partitions.csv: $SLOTS app slot(s); OTA needs two (see README)" >&2
+    exit 1
+fi
+echo "partitions.csv: $SLOTS app slots of $SLOT_BYTES bytes"
+# The table itself, built by the IDF tool that builds the table the flash uses.
+# A CSV whose offsets do not line up fails here instead of halfway through a
+# flash, and the file this leaves behind is the one the README says to write at
+# 0x8000.
+PARTITION_TABLE=$(echo .embuild/espressif/esp-idf/*/components/partition_table/gen_esp32part.py)
+if [ -f "$PARTITION_TABLE" ]; then
+    .venv-tools/bin/python "$PARTITION_TABLE" --flash-size 16MB partitions.csv target/partition-table.bin
+    echo "partition table: $(stat -c %s target/partition-table.bin) bytes at target/partition-table.bin"
+else
+    echo "partition table: SKIPPED (no ESP-IDF checkout under .embuild)"
+fi
 for profile in dev release; do
     directory=$([ "$profile" = dev ] && echo debug || echo release)
     cargo build --locked --profile "$profile"
@@ -77,7 +113,7 @@ for profile in dev release; do
         "target/xtensa-esp32s3-espidf/$directory/easellet"
     image="target/xtensa-esp32s3-espidf/$directory/easellet.bin"
     size=$(stat -c %s "$image")
-    headroom=$((FACTORY_BYTES - size))
+    headroom=$((SLOT_BYTES - size))
     # The size is printed on every build because a partition that is one feature
     # away from full is a fact worth seeing before the next flash, not after.
     printf 'image %s bytes %s headroom=%s fits=%s\n' "$size" "$image" "$headroom" \

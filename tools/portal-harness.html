@@ -173,6 +173,45 @@ async function main() {
   await wait(200);
   log(!$("tab-photos").hidden && $("tab-gallery").hidden, "вкладка «Фотография» вернулась");
 
+  // --- firmware -----------------------------------------------------------
+  // The page must read which slot runs from the frame, and must not offer to
+  // install anything until a file is chosen (the button arms twice on top of
+  // that, but a disabled button is the first gate).
+  $("tab-link-firmware").click();
+  const facts = await until(() => $("firmware-facts").textContent.includes("ota_0"), 10000);
+  log(
+    Boolean(facts) && $("firmware-send").disabled,
+    `вкладка «Прошивка»: ${$("firmware-facts").textContent.trim()} → кнопка disabled=${$("firmware-send").disabled}`
+  );
+
+  // A chosen file enables the button, and the slot size the frame reported is
+  // what a too-large image is refused against - not a constant in the page.
+  const pick = (size) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File([new Uint8Array(size)], "easellet.bin", { type: "application/octet-stream" })
+    );
+    $("firmware-file").files = transfer.files;
+    $("firmware-file").dispatchEvent(new Event("change"));
+  };
+  pick(1024);
+  await wait(200);
+  log(
+    !$("firmware-send").disabled,
+    `выбран образ: ${$("firmware-message").textContent.trim()}`
+  );
+  pick(4 * 1024 * 1024);
+  await wait(200);
+  log(
+    $("firmware-send").disabled,
+    `образ больше слота: ${$("firmware-message").textContent.trim()}`
+  );
+  pick(1024);
+  await wait(200);
+
+  $("tab-link-photos").click();
+  await wait(200);
+
   // The gallery keeps the connection busy with frame fetches, so `/settings`
   // can queue behind them; give it as long as the other checks get.
   const loaded = await until(() => $("ai-url").value.length > 0, 20000);

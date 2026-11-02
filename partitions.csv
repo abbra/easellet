@@ -1,0 +1,16 @@
+# Flash layout for the 16 MB module (N16R8). Written at 0x8000 with
+# esptool/espflash, not compiled in: the app image is built as a raw binary and
+# esp-idf-sys generates its own table for a build-time check only, so this file
+# is what the *frame* must hold for OTA to work (`README.md`, "Flashing").
+#
+# Two equal app slots and no factory: an upload goes into the slot that is not
+# running, and `otadata` remembers which one boots. Rollback is enabled in
+# `sdkconfig.defaults`, so a new image that does not reach its console is
+# replaced by the previous one on the next reset.
+#
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     ,          0x6000,
+otadata,    data, ota,     ,          0x2000,
+phy_init,   data, phy,     ,          0x1000,
+ota_0,      app,  ota_0,   ,          0x300000,
+ota_1,      app,  ota_1,   ,          0x300000,

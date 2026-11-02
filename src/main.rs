@@ -7,12 +7,14 @@ mod config;
 mod console;
 mod diag;
 mod display;
+mod firmware;
 mod font;
 mod gallery;
 mod http;
 mod image;
 mod net;
 mod opendisplay;
+mod ota;
 mod panel;
 mod pcm;
 mod power;
@@ -1130,7 +1132,13 @@ fn run() -> Result<(), EspError> {
     // The low-battery sleep is requested once per boot; a button wake on a still
     // empty cell gets a few seconds of use (the console) before the next one.
     let mut low_handled = false;
-    // Everything above has run: the frame is operable.
+    // Everything above has run: the frame is operable. A freshly installed
+    // image is on probation until this statement, and the bootloader puts the
+    // previous one back if the frame resets before it; a build flashed by hand
+    // has already been accepted and the call changes nothing.
+    if let Err(error) = ota::mark_running_valid() {
+        send(&mut usb, &format!("{}\r\n", error.trim_end()))?;
+    }
     red.set_low()?;
     loop {
         if let Some(timer) = sleep_request.take() {
@@ -1250,7 +1258,7 @@ fn run() -> Result<(), EspError> {
             match command {
                 Command::Help => send(
                     &mut usb,
-                    "OK help info buttons led on|off sensor rtc pmu sd\r\nsleep [0|60..86400] (deep sleep now; BOOT/KEY/PWR wake it, and the timer if non-zero; default power.sleep_secs)\r\nsd ls [<dir>]\r\nconfig|config save (settings on SD)\r\ngallery|status|start [<dir> [120..3600s]]|stop|next (slideshow over .bmp/.el6 in one directory; `config save` persists gallery.dir/secs/auto)\r\nweb|status|start|stop|password <8..64 chars>|password off (page on port 80: upload, gallery as rendered with removal, settings; only EASELTEST may be written or emptied; the password locks the whole page and is saved at once)\r\ndisplay bars|clear black|white|yellow|red|blue|green|sleep|status\r\ndisplay bmp <file.bmp>|raw <file.el6>\r\naudio status|regs|level <ms>|rec <1..10s> (double-beep cue)|tone [100..2000ms]|loop [100..2000ms]|hex|volume <db>|gain <db>|play <file.wav>|off\r\nwifi scan|status|off|auto on|off|join [<ssid> [password]]|time [ntp server]\r\nai|status|selftest|stt [ms] (double-beep cue, records, posts to /stt)|listen [ms] (waits for KEY, then as `ai stt`, prints and draws the transcript)|talk [ms] (KEY, then stt, llm, tts, speech, panel)|ask <text> (posts to /llm then /tts, plays the answer)|url <http://host:port>|key <token> (`-` clears; `config save` persists)\r\nai idle off|key|voice (who may start a turn: nobody, KEY, or loudness on the microphones; `config save` persists)\r\nai threshold <20..4000> (voice gate in sample units; read `last_rms` in `ai status` first)\r\nI2C reads, ALDO4 display rail, ALDO3 audio rail only when audio is used. SD read-only except EASELTEST. Radio only for wifi commands. `wifi join` with no arguments reuses EASELTEST/CONFIG.TXT; that file is loaded at boot and holds the passphrase once `config save` runs; `wifi.auto=1` joins at boot and stays online.\r\n",
+                    "OK help info buttons led on|off sensor rtc pmu sd\r\nsleep [0|60..86400] (deep sleep now; BOOT/KEY/PWR wake it, and the timer if non-zero; default power.sleep_secs)\r\nsd ls [<dir>]\r\nconfig|config save (settings on SD)\r\ngallery|status|start [<dir> [120..3600s]]|stop|next (slideshow over .bmp/.el6 in one directory; `config save` persists gallery.dir/secs/auto)\r\nweb|status|start|stop|password <8..64 chars>|password off (page on port 80: upload, gallery as rendered with removal, settings, firmware; only EASELTEST may be written or emptied; the password locks the whole page and is saved at once)\r\nota (which app slot runs, the slot an upload would replace, and its size)\r\ndisplay bars|clear black|white|yellow|red|blue|green|sleep|status\r\ndisplay bmp <file.bmp>|raw <file.el6>\r\naudio status|regs|level <ms>|rec <1..10s> (double-beep cue)|tone [100..2000ms]|loop [100..2000ms]|hex|volume <db>|gain <db>|play <file.wav>|off\r\nwifi scan|status|off|auto on|off|join [<ssid> [password]]|time [ntp server]\r\nai|status|selftest|stt [ms] (waits for KEY, then double-beep cue, records, posts to /stt)|listen [ms] (as `ai stt`, prints and draws the transcript)|talk [ms] (KEY, then stt, llm, tts, speech, panel)|ask <text> (posts to /llm then /tts, plays the answer)|url <http://host:port>|key <token> (`-` clears; `config save` persists)\r\nai idle off|key|voice (who may start a turn: nobody, KEY, or loudness on the microphones; `config save` persists)\r\nai threshold <20..4000> (voice gate in sample units; read `last_rms` in `ai status` first)\r\nI2C reads, ALDO4 display rail, ALDO3 audio rail only when audio is used. SD read-only except EASELTEST. Radio only for wifi commands. `wifi join` with no arguments reuses EASELTEST/CONFIG.TXT; that file is loaded at boot and holds the passphrase once `config save` runs; `wifi.auto=1` joins at boot and stays online.\r\n",
                 )?,
                 Command::Info => {
                     // SAFETY: These IDF heap queries accept capability masks, require
@@ -1407,6 +1415,23 @@ fn run() -> Result<(), EspError> {
                             "ERR web=off enabled={} (start it with `web start`)\r\n",
                             u8::from(web_enabled)
                         ),
+                    };
+                    send(&mut usb, &reply)?;
+                }
+                Command::Ota => {
+                    // Which slot runs, and what an upload would replace. The web
+                    // page reads the same thing over `GET /ota`.
+                    let reply = match ota::info() {
+                        Ok(info) => format!(
+                            "OK firmware version={} slot={} state={} other={} other_version={} max_bytes={}\r\n",
+                            info.version,
+                            info.running,
+                            info.state,
+                            info.other,
+                            info.other_version.as_deref().unwrap_or("none"),
+                            info.max_bytes
+                        ),
+                        Err(error) => format!("{}\r\n", error.trim_end()),
                     };
                     send(&mut usb, &reply)?;
                 }
@@ -2988,9 +3013,17 @@ fn start_web(
     settings: &config::Settings,
 ) -> Result<String, String> {
     let (jobs, receiver) = mpsc::channel();
-    let server = web::start(web::PORT, settings.web_password().map(str::to_owned), jobs)?;
+    let server = web::start(
+        web::PORT,
+        settings.web_password().map(str::to_owned),
+        jobs,
+        // The portal carries the HTTP; `ota` owns the slot and the flash. Handed
+        // over as two calls so the transport stays free of ESP-IDF and testable
+        // on the host.
+        Box::new(ota::Updater),
+    )?;
     let reply = format!(
-        "OK web listening port={} password={} route=/ (upload, gallery, settings)\r\n",
+        "OK web listening port={} password={} route=/ (upload, gallery, settings, firmware)\r\n",
         server.port(),
         if server.locked() { "<set>" } else { "<none>" }
     );
