@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<title>Мост фоторамок</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The look is the frame portal's (web/index.html), copied so the two pages
+     read as one product; the bridge-only rules follow it. -->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f7;
+    --card: #fff;
+    --ink: #16181d;
+    --muted: #6b7280;
+    --line: #e3e4e8;
+    --accent: #2f6df6;
+    --accent-ink: #fff;
+    --ok: #12805c;
+    --bad: #b42318;
+    --radius: 16px;
+    --shadow: 0 1px 2px rgba(16, 18, 23, .06), 0 8px 24px rgba(16, 18, 23, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1013;
+      --card: #171a1f;
+      --ink: #f2f3f5;
+      --muted: #9aa1ac;
+      --line: #262b33;
+      --accent: #6f9cff;
+      --accent-ink: #0e1013;
+      --ok: #4ade80;
+      --bad: #ff8b7e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .35);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 62rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  header.top { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: baseline; justify-content: space-between; margin-bottom: 1.25rem; }
+  h1 { font-size: 1.5rem; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+  h1 small { display: block; font-size: .85rem; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-top: .2rem; }
+  .chips { display: flex; gap: .5rem; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .8rem; color: var(--muted);
+    border: 1px solid var(--line); background: var(--card);
+    border-radius: 999px; padding: .3rem .7rem;
+  }
+  .chip.bad { color: var(--bad); border-color: var(--bad); }
+  .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: var(--bad); }
+
+  /* Tabs: photos and gallery are what a person in the room uses; everything
+     that reconfigures the device lives behind the third one. */
+  nav.tabs {
+    display: flex; gap: .25rem; padding: .25rem; margin-bottom: 1.25rem;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; box-shadow: var(--shadow); overflow-x: auto;
+  }
+  nav.tabs a {
+    flex: 1 1 auto; text-align: center; white-space: nowrap;
+    padding: .6rem .9rem; border-radius: 9px; text-decoration: none;
+    color: var(--muted); font-size: .92rem; font-weight: 550;
+    display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+  }
+  nav.tabs a:hover { color: var(--ink); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  nav.tabs a[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+  nav.tabs a .count {
+    font-size: .75rem; font-variant-numeric: tabular-nums; opacity: .8;
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    border-radius: 999px; padding: 0 .4rem;
+  }
+  nav.tabs a[aria-selected="true"] .count { opacity: .95; }
+
+  section.card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1.25rem; margin-bottom: 1.25rem;
+  }
+  .card > h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 1rem; font-weight: 600; }
+  .split { display: grid; gap: 1.25rem; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 780px) { .split { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); } }
+  .drop {
+    display: grid; place-items: center; gap: .35rem; text-align: center;
+    border: 1.5px dashed var(--line); border-radius: 12px; padding: 1.75rem 1rem;
+    color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop strong { color: var(--ink); font-weight: 550; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  canvas {
+    display: block; width: 100%; height: auto; aspect-ratio: 800 / 480;
+    border-radius: 10px; border: 1px solid var(--line); background: #fff;
+  }
+  .frames { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  figure.frame {
+    margin: 0; display: flex; flex-direction: column; gap: .45rem;
+    position: relative; padding: .4rem; border-radius: 12px;
+    border: 1px solid transparent;
+  }
+  figure.frame:hover { border-color: var(--line); }
+  figure.frame.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  figure.frame figcaption { display: flex; flex-direction: column; gap: .35rem; font-size: .78rem; color: var(--muted); }
+  figure.frame .line { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+  figure.frame .line.top { justify-content: flex-start; }
+  figure.frame .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* The checkbox sits with the name rather than on the picture: a control on
+     top of the image hides exactly the part being judged. */
+  figure.frame .pick { width: 1rem; height: 1rem; cursor: pointer; accent-color: var(--accent); flex: 0 0 auto; }
+  figure.frame .trash {
+    background: transparent; border-color: transparent; color: var(--muted);
+    padding: .25rem .45rem; font-size: .8rem;
+  }
+  figure.frame .trash:hover:not([disabled]) { color: var(--bad); border-color: var(--line); }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1 1 auto; }
+  button {
+    font: inherit; font-size: .9rem; font-weight: 550;
+    padding: .55rem 1rem; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    transition: background .15s, border-color .15s, opacity .15s;
+  }
+  button:hover:not([disabled]) { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover:not([disabled]) { background: color-mix(in srgb, var(--accent) 88%, #000); }
+  button.danger:hover:not([disabled]) { border-color: var(--bad); color: var(--bad); }
+  /* Deleting asks twice, in place: a modal for "are you sure" is the one dialog
+     everybody dismisses without reading. */
+  button.armed, button.armed:hover:not([disabled]) {
+    background: var(--bad); border-color: var(--bad); color: #fff;
+  }
+  button.small { padding: .3rem .6rem; font-size: .78rem; }
+  button[disabled] { opacity: .45; cursor: default; }
+  label.option { display: inline-flex; gap: .4rem; align-items: center; font-size: .85rem; color: var(--muted); cursor: pointer; }
+  .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+  .toolbar input[type="search"] {
+    font: inherit; font-size: .9rem; padding: .5rem .65rem; border-radius: 9px;
+    color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+    min-width: 12rem; flex: 1 1 12rem;
+  }
+  .pager { display: flex; gap: .5rem; align-items: center; justify-content: center; margin-top: 1.25rem; font-size: .85rem; color: var(--muted); }
+  .pager span { font-variant-numeric: tabular-nums; }
+  form.settings { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem 1rem; margin: 0; min-width: 0; }
+  legend { font-size: .75rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 0 .35rem; }
+  .field { display: grid; gap: .25rem; margin-bottom: .75rem; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { font-size: .78rem; color: var(--muted); }
+  input[type="text"], input[type="password"], input[type="number"], select {
+    font: inherit; font-size: .9rem; width: 100%;
+    padding: .5rem .65rem; border-radius: 9px; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line);
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible, .drop:focus-visible, nav.tabs a:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  input::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+  /* A note that sits between two fields needs air underneath too: margins do not
+     collapse here, and a label glued to the last line reads as part of the note. */
+  .note { font-size: .8rem; color: var(--muted); margin: .6rem 0 .9rem; }
+  .note:last-child { margin-bottom: 0; }
+  .message { font-size: .85rem; white-space: pre-wrap; margin: .8rem 0 0; }
+  .message.ok { color: var(--ok); }
+  .message.bad { color: var(--bad); }
+  .empty { color: var(--muted); font-size: .9rem; padding: .5rem 0; }
+  main > section[hidden] { display: none; }
+  footer { color: var(--muted); font-size: .78rem; text-align: center; margin-top: 2rem; }
+  code { font: .85em ui-monospace, SFMono-Regular, Menlo, monospace; }
+  textarea {
+    font: inherit; font-size: .9rem; width: 100%; min-height: 6rem; resize: vertical;
+    padding: .55rem .7rem; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink);
+  }
+  .badge { font-size: .7rem; border: 1px solid var(--line); border-radius: 999px; padding: .05rem .45rem; color: var(--muted); margin-left: .4rem; }
+  .badge.warn { color: var(--bad); border-color: var(--bad); }
+  .turns { display: grid; gap: .6rem; }
+  .turn { border: 1px solid var(--line); border-radius: 12px; padding: .7rem .9rem; display: grid; gap: .3rem; }
+  .turn .meta { font-size: .75rem; color: var(--muted); display: flex; gap: .8rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  .turn .heard { font-weight: 550; }
+  .turn .answer { color: var(--ink); }
+  .turn.rejected .heard { color: var(--muted); text-decoration: line-through; }
+  .turn .why { font-size: .8rem; color: var(--bad); }
+  .soon { color: var(--muted); }
+  #settings-form { margin-bottom: 1rem; }
+  #tab-frames > .row { margin-bottom: .9rem; }
+  .frame-list { display: grid; gap: 1rem; }
+  .frame-card { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; display: grid; gap: .7rem; }
+  .frame-card header { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: baseline; justify-content: space-between; }
+  .frame-card h3 { margin: 0; font-size: 1.05rem; }
+  .frame-card .where { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .frame-card .send { display: grid; gap: .6rem; }
+  @media (min-width: 780px) { .frame-card .send { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); align-items: start; } }
+  .frame-card .thumbs { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .frame-card .thumbs figure { margin: 0; display: grid; gap: .3rem; font-size: .75rem; color: var(--muted); }
+  .frame-card .thumbs .line { display: flex; gap: .3rem; align-items: center; justify-content: space-between; }
+  .frame-card .thumbs button { padding: .2rem .5rem; font-size: .75rem; }
+  .note-card summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+  .note-card .field { margin-top: .6rem; display: grid; gap: .5rem; }
+  .note-card textarea { min-height: 4.5rem; }
+  img.preview { display: block; width: 100%; max-width: 560px; height: auto; border-radius: 10px; border: 1px solid var(--line); }
+  /* `display` above would otherwise override the `hidden` attribute. */
+  img.preview[hidden], canvas[hidden] { display: none; }
+  .add-frame { margin-top: 1rem; }
+  .plugin-list { display: grid; gap: 1rem; }
+  h2.sub { margin-top: 1.6rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  .schedule { display: grid; gap: .5rem; border-top: 1px dashed var(--line); padding-top: .6rem; }
+  .schedule .frames-pick { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
+  .plugin { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; display: grid; gap: .6rem; }
+  .plugin h3 { margin: 0; font-size: 1.05rem; }
+  .plugin .where { font-size: .75rem; color: var(--muted); }
+  .plugin .form { display: grid; gap: .5rem; }
+  @media (min-width: 780px) { .plugin .body { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 1rem; align-items: start; } }
+  .add-frame summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+  .add-frame .row { margin-top: .6rem; }
+  .add-frame input { flex: 1 1 10rem; }
+  #tab-assistant > .row { margin-bottom: .9rem; }
+  .row.ask input { flex: 1 1 16rem; }
+  audio { width: 100%; max-width: 560px; }
+  audio[hidden] { display: none; }
+</style>
+<body>
+<main>
+  <header class="top">
+    <h1>Мост фоторамок <small>Рамки · плагины · ассистент · настройки</small></h1>
+    <div class="chips">
+      <span class="chip"><span class="dot" id="link-dot"></span><span id="link-text">связь…</span></span>
+      <span class="chip" id="backends-chip">…</span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Разделы">
+    <a href="#frames" role="tab" id="tab-link-frames" aria-controls="tab-frames">Рамки</a>
+    <a href="#plugins" role="tab" id="tab-link-plugins" aria-controls="tab-plugins">Плагины</a>
+    <a href="#assistant" role="tab" id="tab-link-assistant" aria-controls="tab-assistant">Ассистент</a>
+    <a href="#settings" role="tab" id="tab-link-settings" aria-controls="tab-settings">Настройки</a>
+  </nav>
+
+  <section class="card" id="tab-frames" role="tabpanel" aria-labelledby="tab-link-frames" hidden>
+    <h2>Рамки</h2>
+    <div class="row">
+      <button id="frames-scan">Искать в сети</button>
+      <span class="grow"></span>
+      <span class="note" id="frames-note"></span>
+    </div>
+    <div class="frame-list" id="frame-list"></div>
+    <details class="add-frame">
+      <summary>Добавить рамку по адресу</summary>
+      <div class="row">
+        <input type="text" id="add-host" placeholder="192.168.50.204" aria-label="Адрес">
+        <input type="text" id="add-name" placeholder="название (необязательно)" aria-label="Название">
+        <input type="password" id="add-password" placeholder="пароль портала, если есть" aria-label="Пароль">
+        <button id="add-frame">Добавить</button>
+      </div>
+      <p class="note">Для сетей, где поиск (mDNS) не доходит, и для рамок с паролем портала.</p>
+    </details>
+    <p class="message" id="frames-message"></p>
+  </section>
+
+  <section class="card" id="tab-plugins" role="tabpanel" aria-labelledby="tab-link-plugins" hidden>
+    <h2>Плагины</h2>
+    <p class="note">Плагин — программа на машине моста: она решает, что показать, а мост рисует это для рамки.
+      Добавить плагин можно только на самой машине (см. <code>bridge/plugins/README.md</code>); здесь их можно
+      настроить, посмотреть и показать.</p>
+    <div class="plugin-list" id="plugin-list"></div>
+    <p class="note" id="plugin-problems"></p>
+    <h2 class="sub">Задания</h2>
+    <p class="note">Задание запускает плагин по расписанию и отправляет результат рамкам. Неспящей рамке
+      картинка приходит сразу; спящая (на батарее, с <code>bridge.url</code>) забирает её при следующем
+      пробуждении. Одинаковая картинка второй раз не отправляется.</p>
+    <div class="turns" id="job-list"></div>
+    <h2 class="sub">Журнал</h2>
+    <div class="turns" id="run-list"></div>
+  </section>
+
+  <section class="card" id="tab-assistant" role="tabpanel" aria-labelledby="tab-link-assistant" hidden>
+    <h2>Спросить ассистента</h2>
+    <div class="row ask">
+      <input type="text" id="ask-text" class="grow" placeholder="Например: сколько будет семь на восемь?" aria-label="Вопрос">
+      <button class="primary" id="ask-send">Спросить</button>
+    </div>
+    <p class="message" id="ask-answer"></p>
+    <audio id="ask-audio" controls hidden></audio>
+    <p class="note">Микрофон в браузере работает только по HTTPS или на localhost, поэтому здесь — текстом.
+      Вопрос и ответ попадают в историю ниже (адрес «bridge-ui»).</p>
+    <h2 class="sub">Что спрашивали рамки</h2>
+    <div class="row">
+      <button id="history-refresh">Обновить</button>
+      <label class="option"><input type="checkbox" id="history-rejected" checked> показывать отклонённые</label>
+      <span class="grow"></span>
+      <span class="note" id="history-count"></span>
+    </div>
+    <div class="turns" id="turns"></div>
+  </section>
+
+  <section class="card" id="tab-settings" role="tabpanel" aria-labelledby="tab-link-settings" hidden>
+    <h2>Настройки моста</h2>
+    <form id="settings-form" autocomplete="off"></form>
+    <div class="row">
+      <button class="primary" id="settings-save">Сохранить</button>
+      <button id="settings-reload">Перечитать</button>
+    </div>
+    <p class="note" id="settings-file"></p>
+    <p class="message" id="settings-message"></p>
+  </section>
+
+  <footer>photoframe-bridge <span id="version"></span></footer>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
