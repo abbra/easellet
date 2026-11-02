@@ -1,75 +1,85 @@
 # easellet-bridge
 
-The LAN service the photo frame talks to for speech. It exists so the firmware does
-**not** need a cloud API key, TLS, a certificate bundle, base64 or a JSON parser: the
-device uploads companded audio, gets text back, and asks for speech. Everything that
-needs a real CPU happens here.
+The photo frame uses this LAN service for speech. It exists so that the firmware
+does **not** need a cloud API key, TLS, a certificate bundle, base64 or a JSON
+parser. The device uploads companded audio, gets text back and asks for speech.
+Everything that needs a real CPU happens here.
 
 ## Wire protocol
 
-Three `POST` endpoints, all plain text or raw audio. This is the whole contract; the
-firmware side is `../src/bridge.rs` and its tests pin the same bytes.
+There are three `POST` endpoints. All use plain text or raw audio. This is the whole
+contract. The firmware side is `../src/bridge.rs`, and its tests pin the same bytes.
 
-| Path   | Request body                  | Response                          |
-|--------|-------------------------------|-----------------------------------|
-| `/stt` | µ-law, 16 kHz, mono           | `text/plain` UTF-8 transcript      |
-| `/llm` | `text/plain` UTF-8 prompt     | `text/plain` UTF-8 reply           |
-| `/tts` | `text/plain` UTF-8 text       | `audio/basic` µ-law, or `audio/wav` |
-| `/health` | — (GET)                    | `ok`                              |
+| Path | Request body | Response |
+|------|--------------|----------|
+| `/stt` | µ-law, 16 kHz, mono | `text/plain` UTF-8 transcript |
+| `/llm` | `text/plain` UTF-8 prompt | `text/plain` UTF-8 reply |
+| `/tts` | `text/plain` UTF-8 text | `audio/basic` µ-law, or `audio/wav` |
+| `/health` | — (GET) | `ok` |
 
-Headers the device sends, all optional:
+The device sends these headers. All are optional:
 
-- `X-Lang: ru-RU` — recognition and synthesis language.
-- `X-Voice: <name>` — hint for the synthesiser.
-- `X-Model: <name>` — hint for the model.
-- `Authorization: Bearer <token>` — only if the bridge was started with `--token`.
+- `X-Lang: ru-RU` sets the recognition and synthesis language.
+- `X-Voice: <name>` gives a hint to the synthesizer.
+- `X-Model: <name>` gives a hint to the model.
+- `Authorization: Bearer <token>` is used only if the bridge was started with
+  `--token`.
 
-Limits enforced here as well as on the device: 60 s of utterance, 8 KiB of text.
-Failures return a 4xx/5xx with a one-line explanation, because the person reading it
-is whoever is holding the frame's USB cable.
+The bridge enforces the same limits as the device: 60 s of utterance and 8 KiB of
+text. A failure returns a 4xx/5xx code with a one-line explanation. The person who
+reads it is the person who holds the frame's USB cable.
 
 ### Who is being answered
 
-`/stt` refuses a transcript in three cases, all of them as `500 ERR stt: ...` so the
-frame says nothing and goes back to listening:
+`/stt` refuses a transcript in three cases. All three return `500 ERR stt: ...`, so
+the frame says nothing and goes back to listening:
 
-| check | what it stops |
+| Check | What it stops |
 |---|---|
-| fewer than 2 letters | Whisper's answer to a hum: `" ."`, a single `"У"` |
-| a whole-transcript filler | `"Mm-hmm"`, `"Thank you."`, `"No."` — a noisy capture that then became an English "I'm here to help." |
-| no wake stem (`--wake` / `EASEL_WAKE`) | `"Мама, дай мне сок."` — correct recognition of a conversation the frame was not part of |
+| Fewer than 2 letters | Whisper's answer to a hum: `" ."`, a single `"У"`. |
+| A whole-transcript filler | `"Mm-hmm"`, `"Thank you."`, `"No."`. A noisy capture once became an English "I'm here to help." |
+| No wake stem (`--wake` / `EASEL_WAKE`) | `"Мама, дай мне сок."` is correct recognition of a conversation that the frame was not part of. |
 
-The wake stems are compared as lowercase substrings, so `рамк` matches «рамка»,
-«рамку» and «рамке», and `frame` matches the English name. Leaving `EASEL_WAKE` unset
-keeps the old behaviour: every transcript is addressed. It cannot live in the
-firmware, where it would need a flash per word — and it cannot be done by loudness at
-all, because the room and a person speaking to the frame measure the same.
+The bridge compares wake stems as lowercase substrings. `рамк` therefore matches
+«рамка», «рамку» and «рамке», and `frame` matches the English name. If `EASEL_WAKE` is
+not set, the old behavior remains: the bridge treats every transcript as addressed.
+The stem cannot live in the firmware, where it would need a flash per word. Loudness
+cannot do this job either, because the room and a person who speaks to the frame
+measure the same.
 
-Two consequences of using a name, both learned from a real turn:
+A refused capture leaves no trace. The bridge does not add it to the history that
+the web UI shows, and it does not write the transcript to the log. Speech that the
+frame merely overheard is therefore not retained. The log line says only why the
+bridge dropped the capture. The one place where a voice stream is ever written to
+disk is the explicit `EASEL_BRIDGE_DUMP` below.
 
-- **The name is removed from the question.** «Рамка, из чего делают торт?» reaches
-the model as «из чего делают торт?». Left in, it asks about the word «Рамка» as
-often as about the cake, and the panel shows the frame's own name in blue at the top
-of every answer. Whole words are dropped, not stems, so «фоторамка» does not leave a
-«фото» behind.
-- **A bare «Рамка» opens a window instead of a turn.** People pause after a name, and
-the detector closes its utterance after 700 ms of quiet: «Рамка, — из чего…» arrived
-as two captures, the first was the name alone, and the model answered it as though
-somebody had asked what a frame is. A transcript that is *only* the name now returns
-`ERR stt: wake only` — nothing is spoken — and for `WAKE_WINDOW` (10 s) afterwards a
-question needs no name. That is also how a follow-up works: «а почему?» right after an
-answer still reaches the model.
+Using a name has two consequences, both learned from a real turn:
 
-µ-law at 16 kHz mono is 16 kB/s: a five-second question is 80 KB, and the device
+- **The bridge removes the name from the question.** «Рамка, из чего делают торт?»
+  reaches the model as «из чего делают торт?». If the name stays in, the model asks
+  about the word «Рамка» as often as about the cake. The panel also shows the frame's
+  own name in blue at the top of every answer. The bridge drops whole words, not
+  stems, so «фоторамка» does not leave a «фото» behind.
+- **A bare «Рамка» opens a window instead of a turn.** People pause after a name,
+  and the detector closes its utterance after 700 ms of quiet. «Рамка, — из чего…»
+  therefore becomes two captures. The first capture is the name alone, and the
+  model would answer it as though somebody had asked what a frame is. A transcript
+  that is *only* the name returns `ERR stt: wake only`, and nothing is spoken. For
+  `WAKE_WINDOW` (10 s) afterwards, a question needs no name. This is also how a
+  follow-up works: «а почему?» right after an answer still reaches the model.
+
+µ-law at 16 kHz mono is 16 kB/s. A five-second question is 80 KB, and the device
 needs no base64 to send it.
 
 ### Keeping the audio the device sent
 
-`EASEL_BRIDGE_DUMP=<dir>` writes every `/stt` body to `<dir>/stt-<unix-ms>.ulaw` and logs
-the path. Without it a failing microphone and a failing recogniser look identical: the
-response only ever says `ERR stt: whisper heard nothing`.
+`EASEL_BRIDGE_DUMP=<dir>` writes every `/stt` body to `<dir>/stt-<unix-ms>.ulaw` and
+logs the path. It is off unless the operator asks for it, because it retains speech
+that the frame was not part of. `serve-local.sh` does not enable it. Without the
+dump, a failing microphone and a failing recognizer look identical: the response
+only ever says `ERR stt: whisper heard nothing`.
 
-Decode it with tools already at hand:
+Decode the dump with tools that you already have:
 
 ```sh
 f=$(ls -t ~/tmp/frame/stt-dumps/*.ulaw | head -1)
@@ -77,10 +87,10 @@ ffmpeg -f mulaw -ar 16000 -ac 1 -i "$f" "${f%.ulaw}.wav"
 ./bridge/build.sh transcribe small ru "${f%.ulaw}.wav"
 ```
 
-A 250 ms energy plot of the dump separates the cases that matter: speech shows modulated
-energy across the window, a button tap shows a single low-frequency burst (a KEY press
-measured ~125 Hz), and beep leakage would show a flat 880 Hz tone at the start. This is
-what proved that three "whisper heard nothing" runs contained no speech at all.
+A 250 ms energy plot of the dump separates the cases that matter. Speech shows
+modulated energy across the window. A button tap shows a single low-frequency burst
+(a KEY press measures about 125 Hz). Beep leakage shows a flat 880 Hz tone at the
+start. Digital silence shows no energy.
 
 ## Running it
 
@@ -100,27 +110,63 @@ ai.key=s3cret          # optional, must match --token
 ```
 
 `./build.sh` exists because this directory lives inside a firmware project whose
-`../.cargo/config.toml` pins the xtensa target and `-Zbuild-std`. Cargo reads config
-by walking up from the *working* directory, so the script builds from a scratch
-directory instead of duplicating configuration.
+`../.cargo/config.toml` pins the xtensa target and `-Zbuild-std`. Cargo reads its
+config by walking up from the *working* directory. The script therefore builds from
+a scratch directory instead of duplicating the configuration.
+
+## OpenDisplay server
+
+The bridge can act as the OpenDisplay device for one frame. Clients such as Home
+Assistant then connect to the bridge, not to the frame. The bridge keeps the
+protocol state and sends the image to the frame through its normal OpenDisplay
+client.
+
+Use the **OpenDisplay server** section on the Frames tab. Select one frame, enable
+the server and set the discovery name. The bridge saves these keys in
+`bridge.toml`:
+
+| Key | Meaning |
+|---|---|
+| `opendisplay_enabled` | Run the listener. The default is `false`. |
+| `opendisplay_frame` | Frame id to serve. |
+| `opendisplay_name` | mDNS instance name. The default is `Easellet`. |
+| `opendisplay_addr` | Listen address. The default is `0.0.0.0:2446`. |
+
+The bridge advertises `_opendisplay._tcp` and answers `ConfigRead`, `ReadMsd`,
+`FirmwareVersion`, `DirectWrite` and `Reboot`. It forwards `DeepSleep` and
+`Reboot` to the frame. A configuration write changes the bridge's virtual display
+only. The frame keeps its own configuration.
+
+The bridge refuses an image when the selected frame is asleep, offline or already
+refreshing. It does not pretend that a refresh completed. The image is accepted,
+then the bridge waits for the frame's real `0x73` or `0x74` result and returns that
+result to the client.
+
+The bridge filters its own mDNS answer from frame discovery. Without that filter,
+the bridge would list itself as a frame and create a loop.
+
+Both endpoints advertise by default. To make the bridge the only endpoint, set
+`opendisplay.mdns=0` on the frame and reboot it. The frame then keeps its TCP
+listener but stops its mDNS advertisement.
 
 ## Backends
 
-`--stt`, `--llm`, `--tts` each accept `stub` (default) or `cmd:<program> [args...]`.
+`--stt`, `--llm` and `--tts` each accept `stub` (the default) or
+`cmd:<program> [args...]`.
 
-The stubs are not throwaway placeholders — they are how the device's request shape is
+The stubs are not throwaway placeholders. They are how the device's request shape is
 tested before any model is chosen:
 
-- **stub recognition** answers with the duration and peak it received, so
-  "0.00 s, peak 0" (digital silence: the wire or the microphone is dead) is
-  distinguishable from "2.5 s, peak 9000" (audio arrived; only the model is missing).
-- **stub synthesis** answers with a 440 Hz tone rather than silence, so a broken
-  playback path cannot look like a broken synthesiser.
+- **Stub recognition** answers with the duration and peak that it received. You can
+  therefore tell "0.00 s, peak 0" (digital silence: the wire or the microphone is
+  dead) from "2.5 s, peak 9000" (audio arrived; only the model is missing).
+- **Stub synthesis** answers with a 440 Hz tone instead of silence, so a broken
+  playback path cannot look like a broken synthesizer.
 
-`cmd:` backends take the text or the prompt on stdin and write their answer on stdout;
-`cmd:` recognition receives raw 16-bit mono 16 kHz PCM (already expanded from µ-law)
-on stdin. Arguments are split on whitespace and executed directly, never through a
-shell.
+`cmd:` backends take the text or the prompt on stdin and write their answer on
+stdout. `cmd:` recognition receives raw 16-bit mono 16 kHz PCM on stdin, already
+expanded from µ-law. The bridge splits arguments on whitespace and executes the
+program directly, never through a shell.
 
 Examples:
 
@@ -136,26 +182,24 @@ Examples:
 --llm 'cmd:./ask-local.sh'
 ```
 
-Hints reach the backends as environment variables: the recogniser gets `LANGS`
-(the frame's `ai.lang`), the synthesiser gets `VOICES` (its `ai.voice`). A backend
-with only one voice ignores them, which is why the espeak script below works
-unchanged.
+Hints reach the backends as environment variables. The recognizer gets `LANGS` (the
+frame's `ai.lang`). The synthesizer gets `VOICES` (its `ai.voice`). A backend with
+only one voice ignores them, which is why the espeak script below works unchanged.
 
 ## Speech that sounds like a person
 
-`scripts/tts-piper.sh` runs piper, a neural VITS synthesiser, and resamples its
-22 050 Hz output to the 16 kHz the assistant path runs at. It is the recommended
-voice; `scripts/tts-espeak.sh` stays as the dependency-free fallback.
+`scripts/tts-piper.sh` runs piper, a neural VITS synthesizer, and resamples its
+22 050 Hz output to the 16 kHz that the assistant path uses. It is the recommended
+voice. `scripts/tts-espeak.sh` stays as the dependency-free fallback.
 
-Why it exists: the frame was reported as "the speech quality is bad, looks like the
-rate is wrong", and every part of the path except the voice turned out to be
-correct — the same DAC reproduced a natural room recording, the µ-law reply from the
-bridge peaked at 82% of full scale with zero clipped samples, and 6.98 s of audio was
-played in 7 125 ms. The remaining suspect was espeak-ng itself: a rule-based formant
-synthesiser whose Russian sounds mechanical and whose pacing is uneven. Piper fixed
-it, and nothing in the firmware changed — the `cmd:` slot took the new voice.
+espeak-ng is a rule-based formant synthesizer. Its Russian sounds mechanical, and
+its pacing is uneven. The rest of the path does not limit the quality: the same DAC
+reproduces a natural room recording, the µ-law reply from the bridge peaks at 82%
+of full scale with zero clipped samples, and the frame plays 6.98 s of audio in
+7 125 ms. Piper is a neural VITS synthesizer, and its Russian is natural. The
+`cmd:` slot accepts either voice without a firmware change.
 
-Setup (one voice, ~60 MB, nothing fetched at speak time):
+Setup (one voice, about 60 MB, nothing fetched at speak time):
 
 ```bash
 uv tool install piper-tts
@@ -164,32 +208,33 @@ base=https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/irina/med
 curl -LO "$base/ru_RU-irina-medium.onnx" -O "$base/ru_RU-irina-medium.onnx.json"
 ```
 
-Measured here for an 80-character Russian answer: 1.8–2.1 s of synthesis for 7 s of
+Measured here for an 80-character Russian answer: 1.8-2.1 s of synthesis for 7 s of
 audio (espeak: 0.45 s, but robotic), peak 86% of full scale, nothing clipped.
 
-Voice selection: `$VOICES` from the frame is matched against `<voices-dir>/<name>.onnx`,
-so a second model (`ru_RU-dmitri-medium`, male, same repository) is selectable by
-name. A name that matches nothing — the stored default is Google's
-`ru-RU-Standard-B`, a leftover from the sketch this feature came from — falls back to
-irina rather than failing, because an old setting should not silence the frame. The
-script names the model it chose on stderr, so a `POST /tts -> 200` in the access log
-is never the only evidence of who actually spoke:
+Voice selection: the bridge matches `$VOICES` from the frame against
+`<voices-dir>/<name>.onnx`. A second model (`ru_RU-dmitri-medium`, male, same
+repository) is therefore selectable by name. A name that matches nothing falls back
+to irina rather than failing, because an old setting should not silence the frame.
+The stored default is Google's `ru-RU-Standard-B`, which matches no local model.
+The script falls back to irina for it rather than failing. The script names the
+model that it chose on stderr, so a `POST /tts -> 200` in the access log is never
+the only evidence of who actually spoke:
 
 ```
 tts-piper: voice=ru-RU-Standard-B model=~/.local/share/piper-voices/ru_RU-irina-medium.onnx
   tts cmd: voice=ru-RU-Standard-B pcm=222542 bytes -> ulaw=111271
 ```
 
-Volume stops at 0.85 on purpose: at 1.0 piper peaks at full scale and clips a couple
-of samples, and the frame plays at 0 dB into a small speaker, where that is
+Volume stops at 0.85 on purpose. At 1.0 piper peaks at full scale and clips a
+couple of samples. The frame plays at 0 dB into a small speaker, where that is
 distortion rather than loudness.
 
 ## Answers that are actually answers
 
 `scripts/llm-local.py` puts a real language model behind `/llm` instead of the stub
 sentence. It posts to a local `llama-server` and prints the reply, so the whole
-pipeline — recognition, model, voice — is offline. No provider key, no account, no
-request leaving the LAN.
+pipeline (recognition, model, voice) is offline. There is no provider key, no
+account, and no request leaves the LAN.
 
 ```bash
 # One server, weights resident. A short answer then costs ~1.3 s; reloading the
@@ -204,9 +249,9 @@ request leaving the LAN.
 ```
 
 Measured on this host (24 cores, no GPU), Russian prompt "Почему небо голубое?",
-answer quality read by ear and eye:
+answer quality judged by listening and reading:
 
-| model | size | answer | verdict |
+| Model | Size | Answer | Verdict |
 |---|---|---|---|
 | Phi-4-mini-instruct Q4_K_M | 2.3 GB | 1.3 s, *«Это связано с длиной волны солнечного света.»* | chosen |
 | granite-4.2-3b Q4_K_M | 2.1 GB | 9.6 s | 80 tokens of English reasoning, no answer |
@@ -214,15 +259,16 @@ answer quality read by ear and eye:
 | T-lite-instruct 8B Q4_K_M | 4.6 GB | ~20 s | Russian-tuned but 2.8 t/s, unusable aloud |
 | Qwen3.8-27B Q4_K_M | 15.9 GB | — | no GPU, far slower than speech |
 
-The two models that "thought" first are exactly wrong for this device: the frame wants
-one sentence, and a reasoning trace spends the whole token budget on text that is
-never spoken. The system prompt therefore asks for one or two sentences with no
-lists, markdown or formulas — the reply is synthesised and painted on a Spectre-6
-panel, both of which punish chat-window habits.
+Models that produce a reasoning trace first are wrong for this device. The frame
+wants one sentence, and a reasoning trace spends the whole token budget on text that
+is never spoken. The system prompt therefore asks for one or two sentences with no
+lists, markdown or formulas. The reply is synthesized and painted on a Spectre-6
+panel. Both outputs need short, plain text.
 
-`llm-local.py` also strips markdown markers and wrapping quotes, and when a model
-answers only into `reasoning_content` it says so instead of reporting an empty reply —
-that message is what identified the two rejected models.
+`llm-local.py` also strips markdown markers and wrapping quotes. When a model
+answers only into `reasoning_content`, it says so instead of reporting an empty
+reply. That message names the failure, so an empty reply is not reported as a valid
+answer.
 
 Through the frame, with the stub replaced:
 
@@ -233,18 +279,35 @@ ai ask Почему небо голубое?
   reply="Это связано с длиной волны солнечного света."
 ```
 
-The frame's `ai.model` is logged as `model_hint=` because it cannot be honoured: the
-model is whatever the server loaded. The script names the real one on stderr, so both
-appear in the log:
+The frame's `ai.model` is logged as `model_hint=` because the bridge cannot honor
+it: the model is whatever the server loaded. The script names the real model on
+stderr, so both appear in the log:
 
 ```
   llm cmd: model_hint=gemini-2.5-flash reply=44 chars
 llm-local: model=Phi-4-mini-instruct-Q4_K_M.gguf tokens=11 speed=7.6t/s
 ```
 
+## Exact arithmetic
+
+The bridge answers one number, one operator and one number itself, before it calls
+any model (`src/arithmetic.rs`). Models can return a wrong result in a confident
+voice. Measured on this host for «458 умножить на 714», Phi-4-mini answers `326 412`
+and the current model answers `327 732`; the correct value is `327 012`. A wrong
+number spoken in the same confident voice is worse than no answer. The recognizer is
+deliberately narrow: Russian operator words and the usual symbols, a decimal comma
+or point, a signed operand, at most 15 digits, one operation. Anything wider (three
+operands, parentheses, units, a different word) goes to the model unchanged. A
+calculator that silently drops part of the question is worse than none. Division by
+zero gets «На ноль делить нельзя.» instead of a model's guess.
+
+Through the frame: `llm_ms=32` and `reply="458 умножить на 714 равно 327012."`.
+The model takes 1.4 s for the same question. A control question still costs the
+usual `llm_ms=892`.
+
 ## `--features whisper`: rwhisper in-process
 
-`rwhisper` is candle-based Whisper in pure Rust — no whisper.cpp build, no ffmpeg, no
+`rwhisper` is candle-based Whisper in pure Rust: no whisper.cpp build, no ffmpeg, no
 Python, no server to keep running. The model is multilingual and fixed to Russian at
 load time, because a per-request language would mean reloading the weights.
 
@@ -254,58 +317,58 @@ load time, because a per-request language would mean reloading the weights.
 ./build.sh transcribe small ru /path/to/speech.wav  # same models, no device involved
 ```
 
-**It is only usable in a release build.** Ten seconds of speech took 8.5 s in release
-and 120 s in debug on this machine, which is exactly what rwhisper's own "models will
-run extremely slowly in debug mode" warning is about.
+**It is only usable in a release build.** Ten seconds of speech take 8.5 s in
+release and 120 s in debug on this machine. This is exactly what rwhisper's own
+warning means: "models will run extremely slowly in debug mode".
 
 ### Model size is not a preference
 
-| model | 10 s of Russian speech | notes |
+| Model | 10 s of Russian speech | Notes |
 |-------|------------------------|-------|
 | `tiny` | empty or a two-word fragment | too weak for Russian; unusable |
 | `base` | one garbled word | still unusable |
 | `small` | correct Russian, one word misheard | the documented minimum, ~470 MB |
 
-Measured on one core at 16 kHz: `small` transcribes 10 s of speech in ~8.5 s, so budget
-roughly real time on a modern laptop and several times that on a small NAS. The first
-run downloads the weights into the kalosm cache (`~/.cache/kalosm` by default), which is
-why the bridge prints a loading line before it starts listening.
+Measured on one core at 16 kHz: `small` transcribes 10 s of speech in about 8.5 s.
+Budget roughly real time on a modern laptop and several times that on a small NAS.
+The first run downloads the weights into the kalosm cache (`~/.cache/kalosm` by
+default). That is why the bridge prints a loading line before it starts listening.
 
 ### The crate is vendored, and why
 
-`vendor/rwhisper` is rwhisper 0.4.1 with one token added to the decode prompt; see
-`vendor/rwhisper.patch`. Upstream never emits the `<|transcribe|>` token, so the model
-is conditioned only by the language token and behaves as if asked to transcribe English.
-Observable result before the patch: English audio transcribes fine, and Russian comes
-back as **English prose** on `small` and as fragments on `base` — a failure that looks
-like a bad model, not a bad prompt. One line changed, Russian works.
+`vendor/rwhisper` is rwhisper 0.4.1 with one token added to the decode prompt. See
+`vendor/rwhisper.patch`. Upstream never emits the `<|transcribe|>` token, so the
+model is conditioned only by the language token and behaves as if asked to transcribe
+English. With the unpatched upstream crate, English audio transcribes fine, and
+Russian comes back as **English prose** on `small` and as fragments on `base`. That
+failure looks like a bad model, not a bad prompt. The added token makes Russian
+transcribe correctly.
 
-If a later release fixes it, drop the vendored copy, restore
-`rwhisper = "0.4"` in `Cargo.toml`, and confirm with
-`./build.sh transcribe small ru <file.wav>`.
+If a later release fixes it, drop the vendored copy, restore `rwhisper = "0.4"` in
+`Cargo.toml`, and confirm with `./build.sh transcribe small ru <file.wav>`.
 
 ### Dependencies
 
-`rwhisper` depends on `rodio`, which pulls `alsa-sys`, so the host needs ALSA
-development headers — on Fedora `sudo dnf install alsa-lib-devel`, otherwise the build
-stops at `Package alsa was not found in the pkg-config search path`. `rodio` is also a
-direct optional dependency here, at the same version, because
-`Whisper::transcribe` takes a `rodio::Source` rather than an iterator, so samples are
-wrapped in a `SamplesBuffer`. No decoders are requested: the bridge only ever hands over
-raw PCM.
+`rwhisper` depends on `rodio`, which pulls `alsa-sys`. The host therefore needs ALSA
+development headers. On Fedora, run `sudo dnf install alsa-lib-devel`; otherwise the
+build stops at `Package alsa was not found in the pkg-config search path`. `rodio`
+is also a direct optional dependency here, at the same version, because
+`Whisper::transcribe` takes a `rodio::Source` rather than an iterator. The bridge
+therefore wraps samples in a `SamplesBuffer`. No decoders are requested: the bridge
+only ever hands over raw PCM.
 
-The `cmd:` route above reaches the same models with no Rust dependencies at all, and
+The `cmd:` route above reaches the same models with no Rust dependencies at all. It
 stays the answer for a host where the weights do not fit or the ALSA headers are
 unavailable.
 
 ## Why here and not in the firmware
 
-Speech-to-text and text-to-speech both have monthly free allowances in the cloud, but
-both still require a billing account to exist, and the device would carry a secret,
-a TLS stack and a certificate bundle for the privilege. Running the models on a
-machine that is already on the network costs nothing, keeps the transcript on the LAN,
-and shrinks the firmware: no base64, no JSON, no keys on the card.
+Speech-to-text and text-to-speech both have monthly free allowances in the cloud.
+Both still require a billing account, and the device would carry a secret, a TLS
+stack and a certificate bundle for the privilege. Running the models on a machine
+that is already on the network costs nothing. It keeps the transcript on the LAN and
+shrinks the firmware: no base64, no JSON, no keys on the card.
 
-The tradeoff is honest: the frame needs that machine to be up. Recognition and
-synthesis stop working when it is asleep, while everything else on the frame —
-display, SD, audio, Wi-Fi, settings — is unaffected.
+The tradeoff is clear: the frame needs that machine to be up. Recognition and
+synthesis stop working when it is asleep. Everything else on the frame (display, SD,
+audio, Wi-Fi, settings) is unaffected.
