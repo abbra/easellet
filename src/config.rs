@@ -218,6 +218,10 @@ pub struct Settings {
     /// as the protocol expects; `opendisplay.reboot=0` refuses it, because the
     /// LAN transport has no authentication.
     pub opendisplay_reboot: Option<bool>,
+    /// Whether the frame advertises itself over mDNS. `None` means yes. Set
+    /// `opendisplay.mdns=0` when the bridge is the only endpoint clients should
+    /// discover; the TCP server keeps running either way.
+    pub opendisplay_mdns: Option<bool>,
 }
 
 impl Settings {
@@ -445,6 +449,17 @@ impl Settings {
                         }
                     });
                 }
+                "opendisplay.mdns" => {
+                    settings.opendisplay_mdns = Some(match value {
+                        "0" => false,
+                        "1" => true,
+                        _ => {
+                            return Err(format!(
+                                "ERR config line {number}: opendisplay.mdns must be 0 or 1\r\n"
+                            ));
+                        }
+                    });
+                }
                 other => {
                     return Err(format!("ERR config line {number}: unknown key {other}\r\n"));
                 }
@@ -535,6 +550,9 @@ impl Settings {
         if let Some(allowed) = self.opendisplay_reboot {
             text.push_str(&format!("opendisplay.reboot={}\n", u8::from(allowed)));
         }
+        if let Some(advertise) = self.opendisplay_mdns {
+            text.push_str(&format!("opendisplay.mdns={}\n", u8::from(advertise)));
+        }
         text
     }
 
@@ -551,6 +569,11 @@ impl Settings {
     /// Whether an OpenDisplay client's reboot request is honoured.
     pub fn opendisplay_reboot(&self) -> bool {
         self.opendisplay_reboot.unwrap_or(true)
+    }
+
+    /// Whether the frame advertises itself over mDNS.
+    pub fn opendisplay_mdns(&self) -> bool {
+        self.opendisplay_mdns.unwrap_or(true)
     }
 
     /// Optional shared token for the bridge. `None` means the bridge is open, which
@@ -1116,6 +1139,20 @@ mod tests {
                 .opendisplay_reboot()
         );
         assert!(Settings::parse("opendisplay.reboot=no\n").is_err());
+    }
+
+    #[test]
+    fn opendisplay_mdns_defaults_to_on_and_can_be_turned_off() {
+        assert!(Settings::default().opendisplay_mdns());
+        let hidden = Settings::parse("opendisplay.mdns=0\n").expect("valid");
+        assert!(!hidden.opendisplay_mdns());
+        assert!(hidden.render().contains("opendisplay.mdns=0\n"));
+        assert!(
+            !Settings::parse(&hidden.render())
+                .expect("re-parse")
+                .opendisplay_mdns()
+        );
+        assert!(Settings::parse("opendisplay.mdns=no\n").is_err());
     }
 
     #[test]

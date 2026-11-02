@@ -214,6 +214,13 @@
   /* `display` above would otherwise override the `hidden` attribute. */
   img.preview[hidden], canvas[hidden] { display: none; }
   .add-frame { margin-top: 1rem; }
+  .expose {
+    margin: 0 0 1rem; padding: .8rem 1rem; border: 1px solid var(--line);
+    border-radius: 12px; background: color-mix(in srgb, var(--accent) 4%, var(--card));
+  }
+  .expose summary { cursor: pointer; color: var(--ink); font-weight: 600; font-size: .95rem; }
+  .expose .row { margin-top: .7rem; }
+  .expose select, .expose input[type="text"] { flex: 1 1 12rem; }
   .plugin-list { display: grid; gap: .75rem; }
   /* A closed section per plugin: the head stays readable at a glance, the
      fields only appear for the plugin being used. */
@@ -272,6 +279,19 @@
       <span class="grow"></span>
       <span class="note" id="frames-note"></span>
     </div>
+    <details class="expose" id="opendisplay" open>
+      <summary data-i18n="expose.title">OpenDisplay server</summary>
+      <div class="row">
+        <label class="option"><input type="checkbox" id="expose-enabled"> <span data-i18n="expose.enable">Serve the selected frame through the bridge</span></label>
+      </div>
+      <div class="row">
+        <select id="expose-frame" data-i18n-aria="expose.choose" aria-label="Frame"></select>
+        <input type="text" id="expose-name" data-i18n-placeholder="expose.namePlaceholder" placeholder="Easellet" data-i18n-aria="expose.name" aria-label="Discovery name">
+        <button id="expose-save" data-i18n="expose.save">Save</button>
+      </div>
+      <p class="note" id="expose-status"></p>
+      <p class="note" data-i18n="expose.note">Home Assistant and other OpenDisplay clients connect to the bridge. The frame must be awake; the bridge refuses an image while it is asleep.</p>
+    </details>
     <div class="frame-list" id="frame-list"></div>
     <details class="add-frame">
       <summary data-i18n="frames.addTitle">Add a frame by address</summary>
@@ -385,6 +405,19 @@ const STRINGS = {
     "frames.noMac": "no MAC",
     "frames.found": "found on the network",
     "frames.manual": "added by hand",
+    "expose.title": "OpenDisplay server",
+    "expose.enable": "Serve the selected frame through the bridge",
+    "expose.choose": "Choose a frame…",
+    "expose.name": "Discovery name",
+    "expose.namePlaceholder": "Easellet",
+    "expose.save": "Save",
+    "expose.saved": "Saved; the listener restarts within a second.",
+    "expose.running": "Listening as {instance} on port {port}.",
+    "expose.stopped": "Not listening.",
+    "expose.note": "Home Assistant and other OpenDisplay clients connect to the bridge. The frame must be awake; the bridge refuses an image while it is asleep.",
+    "expose.missing": "not found yet",
+    "expose.failed": "Failed: {error}",
+    "expose.chooseError": "Choose a frame first.",
     "card.modeCover": "fill the frame",
     "card.modeContain": "fit",
     "card.dither": "smooth",
@@ -550,6 +583,19 @@ const STRINGS = {
     "frames.noMac": "без MAC",
     "frames.found": "найдена в сети",
     "frames.manual": "добавлена вручную",
+    "expose.title": "Сервер OpenDisplay",
+    "expose.enable": "Отдавать выбранную рамку через мост",
+    "expose.choose": "Выберите рамку…",
+    "expose.name": "Имя для поиска",
+    "expose.namePlaceholder": "Easellet",
+    "expose.save": "Сохранить",
+    "expose.saved": "Сохранено; сервер перезапустится в течение секунды.",
+    "expose.running": "Слушает как {instance} на порту {port}.",
+    "expose.stopped": "Не слушает.",
+    "expose.note": "Home Assistant и другие клиенты OpenDisplay подключаются к мосту. Рамка должна быть на связи; спящей рамке мост откажет в картинке.",
+    "expose.missing": "ещё не найдена",
+    "expose.failed": "Не удалось: {error}",
+    "expose.chooseError": "Сначала выберите рамку.",
     "card.modeCover": "заполнить кадр",
     "card.modeContain": "целиком",
     "card.dither": "плавно",

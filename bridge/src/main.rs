@@ -12,6 +12,7 @@ mod frames;
 mod history;
 mod intents;
 mod jobs;
+mod opendisplay;
 mod plugins;
 mod render;
 mod server;
@@ -291,6 +292,7 @@ fn run() -> Result<(), String> {
         })),
         history: Arc::clone(&history),
         frames: Arc::new(frames::Registry::default()),
+        opendisplay: Arc::new(Mutex::new(opendisplay::Status::default())),
         // Cards need a font; without one the rest of the bridge still works.
         fonts: match render::Fonts::load(None) {
             Ok(fonts) => Some(Arc::new(fonts)),
@@ -345,6 +347,13 @@ fn serve(bridge: Bridge, context: Arc<ui::Context>, addr: &str) -> Result<(), St
                 std::thread::sleep(std::time::Duration::from_secs(60));
             }
         });
+    }
+    // OpenDisplay: expose the selected frame while the settings ask for it.
+    {
+        let settings = Arc::clone(&context.settings);
+        let frames = Arc::clone(&context.frames);
+        let status = Arc::clone(&context.opendisplay);
+        std::thread::spawn(move || opendisplay::supervise(settings, frames, status));
     }
     // Jobs: run what is due every half minute, after the first frame scan.
     {

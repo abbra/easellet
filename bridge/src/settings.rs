@@ -50,6 +50,15 @@ pub struct Settings {
     /// whose portal has a password.
     #[serde(rename = "frame")]
     pub frames: Vec<FrameEntry>,
+    /// Serve the selected frame over OpenDisplay from this host. Off by default:
+    /// a second discovery answer for the same panel confuses clients.
+    pub opendisplay_enabled: bool,
+    /// Frame id (the MAC without colons, or `ip-...`) to serve.
+    pub opendisplay_frame: String,
+    /// mDNS instance name; empty uses the frame's name. Dots are not allowed.
+    pub opendisplay_name: String,
+    /// Address of the bridge's OpenDisplay listener.
+    pub opendisplay_addr: String,
 }
 
 /// One `[[frame]]` table.
@@ -79,6 +88,10 @@ impl Default for Settings {
             ui_password: String::new(),
             ui_hosts: Vec::new(),
             frames: Vec::new(),
+            opendisplay_enabled: false,
+            opendisplay_frame: String::new(),
+            opendisplay_name: "Easellet".to_owned(),
+            opendisplay_addr: "0.0.0.0:2446".to_owned(),
         }
     }
 }
@@ -125,7 +138,7 @@ impl Settings {
         let text = format!(
             "# easellet-bridge settings; edited by the web UI as well.\n\
              # Keys: addr, token, stt, llm, tts, wake, llm_system, stt_prompt, llm_url,\n\
-             # ui_password, ui_hosts. Flags and EASEL_* variables override this file.\n\n{text}"
+             # ui_password, ui_hosts, opendisplay_*. Flags and EASEL_* variables override this file.\n\n{text}"
         );
         if let Some(directory) = path.parent() {
             std::fs::create_dir_all(directory)
@@ -272,6 +285,30 @@ impl Settings {
                     next.llm_url = url;
                 }
                 "ui_hosts" => next.ui_hosts = list(value)?,
+                "opendisplay_enabled" => {
+                    next.opendisplay_enabled = value
+                        .as_bool()
+                        .ok_or_else(|| "opendisplay_enabled must be true or false".to_owned())?
+                }
+                "opendisplay_frame" => {
+                    let frame = text(value)?;
+                    if frame.len() > 64
+                        || !frame
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                    {
+                        return Err("opendisplay_frame must be a frame id".to_owned());
+                    }
+                    next.opendisplay_frame = frame;
+                }
+                "opendisplay_name" => {
+                    let name = text(value)?;
+                    if name.len() > 63 {
+                        return Err("opendisplay_name is at most 63 bytes".to_owned());
+                    }
+                    next.opendisplay_name = name;
+                }
+                "opendisplay_addr" => next.opendisplay_addr = valid_addr(&text(value)?)?,
                 // Frames are added and removed through their own requests.
                 other => return Err(format!("unknown setting {other}")),
             }

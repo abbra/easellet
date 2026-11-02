@@ -645,6 +645,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d926b4d407d372f141f93bb444696142c29d32962ccbd3531117cf3aa0bfa9"
 
 [[package]]
+name = "easellet-bridge"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "futures-util",
+ "image",
+ "miniz_oxide 0.8.9",
+ "opendisplay-proto",
+ "png 0.17.16",
+ "rodio",
+ "rwhisper",
+ "serde",
+ "serde_json",
+ "socket2 0.5.10",
+ "tiny_http",
+ "tokio",
+ "toml",
+ "tracing-subscriber",
+ "ureq",
+]
+
+[[package]]
 name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2134,27 +2156,6 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "easellet-bridge"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "futures-util",
- "image",
- "miniz_oxide 0.8.9",
- "opendisplay-proto",
- "png 0.17.16",
- "rodio",
- "rwhisper",
- "serde",
- "serde_json",
- "tiny_http",
- "tokio",
- "toml",
- "tracing-subscriber",
- "ureq",
-]
 
 [[package]]
 name = "pin-project-lite"

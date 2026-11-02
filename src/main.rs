@@ -1232,7 +1232,11 @@ fn run() -> Result<(), EspError> {
                         send(&mut usb, &error)?;
                     }
                     let identity = net_state.as_ref().and_then(|net| net.address());
-                    match start_opendisplay(&mut opendisplay_state, identity) {
+                    match start_opendisplay(
+                        &mut opendisplay_state,
+                        identity,
+                        settings.opendisplay_mdns(),
+                    ) {
                         Ok(reply) => send(&mut usb, &reply)?,
                         Err(error) => send(&mut usb, &error)?,
                     }
@@ -3034,10 +3038,11 @@ fn start_web(
 fn start_opendisplay(
     state: &mut Option<(opendisplay::Handle, mpsc::Receiver<opendisplay::Job>)>,
     identity: Option<(std::net::Ipv4Addr, [u8; 6])>,
+    mdns: bool,
 ) -> Result<String, String> {
     let (jobs, receiver) = mpsc::channel();
     let (handle, note) =
-        opendisplay::start(jobs, identity).map_err(|error| format!("{error}\r\n"))?;
+        opendisplay::start(jobs, identity, mdns).map_err(|error| format!("{error}\r\n"))?;
     *state = Some((handle, receiver));
     Ok(format!(
         "OK opendisplay listening port={} {note}\r\n",

@@ -178,15 +178,20 @@ impl Drop for Handle {
 pub fn start(
     jobs: Sender<Job>,
     identity: Option<(Ipv4Addr, [u8; 6])>,
+    mdns_enabled: bool,
 ) -> Result<(Handle, String), String> {
     let listener = TcpListener::bind(("0.0.0.0", PORT))
         .map_err(|error| format!("ERR opendisplay bind 0.0.0.0:{PORT}: {error}"))?;
     listener
         .set_nonblocking(true)
         .map_err(|error| format!("ERR opendisplay nonblocking: {error}"))?;
-    let discovery = match identity {
-        Some((ip, mac)) => Discovery::new(ip, mac),
-        None => Err("no address yet".to_owned()),
+    let discovery = if mdns_enabled {
+        match identity {
+            Some((ip, mac)) => Discovery::new(ip, mac),
+            None => Err("no address yet".to_owned()),
+        }
+    } else {
+        Err("disabled by opendisplay.mdns=0".to_owned())
     };
     let note = match &discovery {
         Ok(discovery) => format!("mdns={}.local", discovery.name),

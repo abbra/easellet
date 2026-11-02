@@ -15,11 +15,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, UdpSocket};
-use std::sync::Mutex;
+use std::num::NonZeroU16;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use opendisplay_proto::client::{self, ConfigReader};
 use opendisplay_proto::config::{Blob, DisplayConfig, PacketType};
+use opendisplay_proto::server::RefreshOutcome;
 use opendisplay_proto::wire::{LAN_MAX_PAYLOAD, LAN_TCP_PORT, Opcode};
 use opendisplay_proto::{RefreshMode, lan, mdns};
 use serde::Serialize;
@@ -33,6 +35,8 @@ const BROWSE_WAIT: Duration = Duration::from_millis(1_500);
 const FRAME_TIMEOUT: Duration = Duration::from_secs(3);
 /// Larger timeout for a whole picture over OpenDisplay.
 const IMAGE_TIMEOUT: Duration = Duration::from_secs(30);
+/// A refresh takes about 31 s after the image is accepted; wait a little longer.
+const REFRESH_TIMEOUT: Duration = Duration::from_secs(45);
 /// Largest answer accepted from a frame's portal: a 192 000-byte frame plus slack.
 const MAX_PORTAL_ANSWER: u64 = 256 * 1024;
 
@@ -68,6 +72,9 @@ pub struct Frame {
     /// The portal's `/sensors` document, as it was last read.
     pub sensors: Option<serde_json::Value>,
     pub panel: Option<Panel>,
+    /// The frame's OpenDisplay manufacturer data, as last read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub msd: Option<[u8; 16]>,
     /// Seconds since the frame last answered anything.
     pub seen_s: Option<u64>,
     pub error: Option<String>,
@@ -96,6 +103,10 @@ pub struct Found {
 #[derive(Default)]
 pub struct Registry {
     frames: Mutex<BTreeMap<String, Frame>>,
+    /// The bridge's own OpenDisplay endpoint, if one is running. Its mDNS
+    /// answer must not become a frame: that would create a loop through the
+    /// bridge and a second copy of the same panel in the UI.
+    exposed: Mutex<Option<(Ipv4Addr, u16)>>,
 }
 
 fn id_for(mac: Option<&str>, host: &str) -> String {
@@ -137,13 +148,24 @@ impl Registry {
         Some((frame.host.clone(), frame.port, frame.password.clone()))
     }
 
+    /// One frame as it was last checked, by id.
+    pub fn get(&self, id: &str) -> Option<Frame> {
+        let frames = self.frames.lock().ok()?;
+        frames.get(id).cloned()
+    }
+
     /// Browse, merge in the hand-added frames, and check every frame's status.
     /// Blocks for the browse plus a few seconds per unreachable frame.
     pub fn refresh(&self, manual: &[FrameEntry]) {
-        let found = browse(BROWSE_WAIT).unwrap_or_else(|error| {
+        let mut found = browse(BROWSE_WAIT).unwrap_or_else(|error| {
             eprintln!("  frames: mDNS browse failed: {error}");
             Vec::new()
         });
+        if let Ok(exposed) = self.exposed.lock()
+            && let Some((address, port)) = *exposed
+        {
+            found.retain(|found| found.address != address || found.port != port);
+        }
         let mut current: BTreeMap<String, Frame> = self
             .frames
             .lock()
@@ -167,6 +189,7 @@ impl Registry {
                 portal: false,
                 sensors: None,
                 panel: None,
+                msd: None,
                 seen_s: None,
                 error: None,
                 seen: None,
@@ -198,6 +221,7 @@ impl Registry {
                 portal: false,
                 sensors: None,
                 panel: None,
+                msd: None,
                 seen_s: None,
                 error: None,
                 seen: None,
@@ -218,6 +242,26 @@ impl Registry {
         }
         if let Ok(mut frames) = self.frames.lock() {
             *frames = current;
+        }
+    }
+
+    /// The bridge is now the OpenDisplay endpoint at this address. Drop the
+    /// frame entry that the bridge's own advertisement made on an earlier scan.
+    pub fn expose(&self, address: Ipv4Addr, port: u16) {
+        if let Ok(mut exposed) = self.exposed.lock() {
+            *exposed = Some((address, port));
+        }
+        if let Ok(mut frames) = self.frames.lock() {
+            let host = address.to_string();
+            frames.retain(|_, frame| frame.host != host || frame.port != port);
+        }
+    }
+
+    /// The bridge's OpenDisplay endpoint is gone; frames at that address are
+    /// real again (there should be none, but do not filter blindly forever).
+    pub fn unexpose(&self) {
+        if let Ok(mut exposed) = self.exposed.lock() {
+            *exposed = None;
         }
     }
 
@@ -250,10 +294,11 @@ fn check(frame: &mut Frame) {
             frame.portal = false;
         }
     }
-    if frame.panel.is_none() {
-        match read_panel(&frame.host, frame.port) {
-            Ok(panel) => {
+    if frame.panel.is_none() || frame.msd.is_none() {
+        match read_identity(&frame.host, frame.port) {
+            Ok((panel, msd)) => {
                 frame.panel = Some(panel);
+                frame.msd = msd;
                 frame.online = true;
                 frame.seen = Some(Instant::now());
             }
@@ -445,13 +490,20 @@ pub fn base64_bytes(bytes: &[u8]) -> String {
     out
 }
 
-/// An OpenDisplay session over TCP.
+/// One OpenDisplay client per frame at a time: a new connection evicts the
+/// old one, so the bridge serialises its own status reads, pushes and proxied
+/// client sessions through this gate.
+static SESSIONS: Mutex<()> = Mutex::new(());
+
+/// An OpenDisplay session over TCP. The guard lives as long as the session.
 struct Session {
     stream: TcpStream,
+    _gate: MutexGuard<'static, ()>,
 }
 
 impl Session {
     fn open(host: &str, port: u16, timeout: Duration) -> Result<Self, String> {
+        let gate = SESSIONS.lock().unwrap_or_else(|error| error.into_inner());
         let address: SocketAddr = format!("{}:{port}", bracket(host)).parse().or_else(|_| {
             std::net::ToSocketAddrs::to_socket_addrs(&(host, port))
                 .map_err(|error| error.to_string())?
@@ -465,7 +517,10 @@ impl Session {
             .and_then(|()| stream.set_write_timeout(Some(timeout)))
             .and_then(|()| stream.set_nodelay(true))
             .map_err(|error| error.to_string())?;
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            _gate: gate,
+        })
     }
 
     fn send(&mut self, payload: &[u8]) -> Result<(), String> {
@@ -492,8 +547,9 @@ impl Session {
     }
 }
 
-/// The panel's size and colours, from the frame's config.
-pub fn read_panel(host: &str, port: u16) -> Result<Panel, String> {
+/// The panel and the frame's manufacturer data, read in one OpenDisplay session.
+/// A failed MSD read does not lose the panel: it is telemetry, not identity.
+pub fn read_identity(host: &str, port: u16) -> Result<(Panel, Option<[u8; 16]>), String> {
     let mut session = Session::open(host, port, FRAME_TIMEOUT)?;
     session.send(&client::simple(Opcode::ConfigRead))?;
     let mut reader = ConfigReader::default();
@@ -510,21 +566,24 @@ pub fn read_panel(host: &str, port: u16) -> Result<Panel, String> {
     let display: &DisplayConfig = blob
         .find(PacketType::DISPLAY)
         .ok_or_else(|| "config has no display".to_owned())?;
-    Ok(Panel {
+    let panel = Panel {
         width: display.pixel_width.get(),
         height: display.pixel_height.get(),
         rotation: display.rotation,
         color_scheme: display.color_scheme,
-    })
+    };
+    let msd = session
+        .send(&client::simple(Opcode::ReadMsd))
+        .ok()
+        .and_then(|()| session.receive().ok())
+        .and_then(|answer| client::msd_record(&answer).ok());
+    Ok((panel, msd))
 }
 
-/// Show one picture, already in the panel's own format, without storing it:
-/// `DirectWrite` with zlib. Returns once the frame has accepted the image and
-/// started its refresh; the refresh itself takes the panel about 30 s more.
-pub fn display(host: &str, port: u16, image: &[u8]) -> Result<String, String> {
-    let started = Instant::now();
+/// Send one image in the panel's own format; stop once the frame accepts the
+/// end and starts its refresh.
+fn send_image(session: &mut Session, image: &[u8]) -> Result<usize, String> {
     let stream = miniz_oxide::deflate::compress_to_vec_zlib(image, 6);
-    let mut session = Session::open(host, port, IMAGE_TIMEOUT)?;
     let mut out = vec![0u8; LAN_MAX_PAYLOAD];
     let image_len = u32::try_from(image.len()).map_err(|_| "image too large".to_owned())?;
     let (len, mut sent) = client::write_start_zlib(image_len, &stream, &mut out);
@@ -543,12 +602,51 @@ pub fn display(host: &str, port: u16, image: &[u8]) -> Result<String, String> {
     session.send(&end[..len])?;
     client::expect_ack(&session.receive()?, Opcode::DirectWriteEnd)
         .map_err(|error| refused(error, "the frame did not start the refresh"))?;
+    Ok(stream.len())
+}
+
+/// Show one picture, already in the panel's own format, without storing it:
+/// `DirectWrite` with zlib. Returns once the frame has accepted the image and
+/// started its refresh; the refresh itself takes the panel about 30 s more.
+pub fn display(host: &str, port: u16, image: &[u8]) -> Result<String, String> {
+    let started = Instant::now();
+    let mut session = Session::open(host, port, IMAGE_TIMEOUT)?;
+    let stream_len = send_image(&mut session, image)?;
     Ok(format!(
-        "OK sent {} bytes as {} zlib bytes in {} ms; the panel refreshes now (~30 s)",
+        "OK sent {} bytes as {stream_len} zlib bytes in {} ms; the panel refreshes now (~30 s)",
         image.len(),
-        stream.len(),
         started.elapsed().as_millis()
     ))
+}
+
+/// Show one picture and wait for the frame's unsolicited 0x73 or 0x74, so a
+/// proxy can pass the real result to its own client. This holds the OpenDisplay
+/// gate for the whole refresh.
+pub fn display_wait(host: &str, port: u16, image: &[u8]) -> Result<RefreshOutcome, String> {
+    let mut session = Session::open(host, port, REFRESH_TIMEOUT)?;
+    send_image(&mut session, image)?;
+    loop {
+        let answer = session.receive()?;
+        if let Some(outcome) = client::refresh_outcome(&answer) {
+            return Ok(outcome);
+        }
+    }
+}
+
+/// Ask the frame to reboot. The spec sends no answer.
+pub fn reboot(host: &str, port: u16) -> Result<(), String> {
+    let mut session = Session::open(host, port, FRAME_TIMEOUT)?;
+    session.send(&client::simple(Opcode::Reboot))
+}
+
+/// Ask the frame to sleep, with a one-shot wake timer when given.
+pub fn deep_sleep(host: &str, port: u16, secs: Option<NonZeroU16>) -> Result<(), String> {
+    let mut session = Session::open(host, port, FRAME_TIMEOUT)?;
+    let mut request = client::simple(Opcode::DeepSleep).to_vec();
+    if let Some(secs) = secs {
+        request.extend_from_slice(&secs.get().to_be_bytes());
+    }
+    session.send(&request)
 }
 
 fn refused(error: client::ClientError, meaning: &str) -> String {

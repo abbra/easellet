@@ -23,6 +23,7 @@ use std::time::Instant;
 use crate::frames::{self, Registry};
 use crate::history::History;
 use crate::jobs::Scheduler;
+use crate::opendisplay;
 use crate::plugins;
 use crate::render::{self, Card, Fonts};
 use crate::settings::{Live, RESTART_KEYS, Settings};
@@ -67,6 +68,8 @@ pub struct Context {
     pub settings: Arc<RwLock<SettingsState>>,
     pub history: Arc<Mutex<History>>,
     pub frames: Arc<Registry>,
+    /// Runtime state of the bridge's own OpenDisplay listener.
+    pub opendisplay: Arc<Mutex<opendisplay::Status>>,
     pub fonts: Option<Arc<Fonts>>,
     /// Where plugins are looked for, the user's own directory first.
     pub plugin_dirs: Vec<PathBuf>,
@@ -208,6 +211,8 @@ pub fn handle(request: Request<'_>, context: &Context) -> Response {
         ("POST", path) if path.starts_with("/api/plugins/") => {
             plugin_action(context, &path["/api/plugins/".len()..], &request.body)
         }
+        ("GET", "/api/opendisplay") => opendisplay_status(context),
+        ("POST", "/api/opendisplay") => save_opendisplay(context, &request.body),
         ("GET", "/api/frames") => frame_list(context),
         ("POST", "/api/frames/scan") => {
             rescan(context);
@@ -717,6 +722,80 @@ fn frame_list(context: &Context) -> Response {
     Response::json(200, &serde_json::json!({"frames": context.frames.list()}))
 }
 
+/// The Frames tab's OpenDisplay control: saved settings plus the listener's
+/// actual state, which may differ for a second after a change.
+fn opendisplay_status(context: &Context) -> Response {
+    let Ok(state) = context.settings.read() else {
+        return Response::text(500, "ERR settings unavailable\n");
+    };
+    let settings = &state.settings;
+    let running = context
+        .opendisplay
+        .lock()
+        .map(|status| status.clone())
+        .unwrap_or_default();
+    let frame = context
+        .frames
+        .list()
+        .into_iter()
+        .find(|frame| frame.id == settings.opendisplay_frame);
+    Response::json(
+        200,
+        &serde_json::json!({
+            "enabled": settings.opendisplay_enabled,
+            "frame": settings.opendisplay_frame,
+            "frame_name": frame.map(|frame| frame.name),
+            "name": settings.opendisplay_name,
+            "addr": settings.opendisplay_addr,
+            "running": running.running,
+            "instance": running.instance,
+            "port": running.port,
+            "error": running.error,
+        }),
+    )
+}
+
+fn save_opendisplay(context: &Context, body: &[u8]) -> Response {
+    let Ok(request) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return Response::text(400, "ERR expected a JSON object\n");
+    };
+    let enabled = request
+        .get("enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let frame = request
+        .get("frame")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let name = request
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if enabled && frame.is_empty() {
+        return Response::text(400, "ERR choose a frame to expose\n");
+    }
+    let Ok(mut state) = context.settings.write() else {
+        return Response::text(500, "ERR settings unavailable\n");
+    };
+    let change = serde_json::json!({
+        "opendisplay_enabled": enabled,
+        "opendisplay_frame": frame,
+        "opendisplay_name": name,
+    });
+    let mut next = state.settings.clone();
+    if let Err(error) = next.apply(&change, &state.pinned) {
+        return Response::text(400, format!("ERR {error}\n"));
+    }
+    if let Err(error) = next.save(&state.path) {
+        return Response::text(500, format!("ERR saving settings: {error}\n"));
+    }
+    state.settings = next;
+    drop(state);
+    opendisplay_status(context)
+}
+
 /// Browse and check every frame now (the background refresh does the same each
 /// minute).
 pub fn rescan(context: &Context) {
@@ -1004,6 +1083,7 @@ mod tests {
                 settings: Arc::new(RwLock::new(state)),
                 history: Arc::new(Mutex::new(History::default())),
                 frames: Arc::new(Registry::default()),
+                opendisplay: Arc::new(Mutex::new(opendisplay::Status::default())),
                 fonts: Fonts::load(None).ok().map(Arc::new),
                 plugin_dirs: Vec::new(),
                 plugin_state: Mutex::new(std::collections::BTreeMap::new()),
@@ -1026,7 +1106,7 @@ mod tests {
                 use std::sync::atomic::{AtomicU32, Ordering};
                 static NEXT: AtomicU32 = AtomicU32::new(0);
                 let path = std::env::temp_dir().join(format!(
-                    "pf-bridge-ui-{}-{}",
+                    "easellet-bridge-ui-{}-{}",
                     std::process::id(),
                     NEXT.fetch_add(1, Ordering::Relaxed)
                 ));
@@ -1118,6 +1198,59 @@ mod tests {
             std::fs::read_to_string(&state.path)
                 .unwrap()
                 .contains("frame")
+        );
+    }
+
+    #[test]
+    fn an_opendisplay_choice_is_saved_and_reported() {
+        let (context, _dir) = context(Settings::default());
+        let body = br#"{"enabled":true,"frame":"94a990caed46","name":"Kitchen"}"#.to_vec();
+        let request = Request {
+            method: "POST",
+            url: "/api/opendisplay",
+            host: Some("192.168.50.93"),
+            authorization: None,
+            marked: true,
+            body,
+        };
+        let response = handle(request, &context);
+        assert_eq!(response.status, 200);
+        let document: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(document["enabled"], true);
+        assert_eq!(document["frame"], "94a990caed46");
+        assert_eq!(document["name"], "Kitchen");
+        assert_eq!(document["running"], false);
+        let state = context.settings.read().unwrap();
+        assert!(state.settings.opendisplay_enabled);
+        assert_eq!(state.settings.opendisplay_frame, "94a990caed46");
+        assert_eq!(state.settings.opendisplay_name, "Kitchen");
+        assert!(
+            std::fs::read_to_string(&state.path)
+                .unwrap()
+                .contains("opendisplay_enabled = true")
+        );
+    }
+
+    #[test]
+    fn enabling_opendisplay_without_a_frame_is_refused() {
+        let (context, _dir) = context(Settings::default());
+        let request = Request {
+            method: "POST",
+            url: "/api/opendisplay",
+            host: Some("192.168.50.93"),
+            authorization: None,
+            marked: true,
+            body: br#"{"enabled":true,"frame":"","name":"Easellet"}"#.to_vec(),
+        };
+        let response = handle(request, &context);
+        assert_eq!(response.status, 400);
+        assert!(
+            !context
+                .settings
+                .read()
+                .unwrap()
+                .settings
+                .opendisplay_enabled
         );
     }
 

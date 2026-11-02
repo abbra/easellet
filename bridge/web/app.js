@@ -139,6 +139,78 @@ function chip(content, className) {
   return text("span", content, `chip ${className ?? ""}`);
 }
 
+// ---- the bridge as an OpenDisplay device -----------------------------------
+
+// `lastFrames` lets the exposure controls redraw after a save without another
+// network scan. `exposureDirty` stops the 30 s refresh from replacing a choice
+// the user is still editing.
+let lastFrames = [];
+let exposureDirty = false;
+
+async function loadExposure(frames = lastFrames) {
+  lastFrames = frames;
+  try {
+    const answer = await fetch("/api/opendisplay");
+    if (!answer.ok) throw new Error((await answer.text()).trim());
+    renderExposure(await answer.json());
+  } catch (error) {
+    $("expose-status").textContent = t("expose.failed", { error: error.message });
+    $("expose-status").className = "note bad";
+  }
+}
+
+function renderExposure(data) {
+  $("expose-enabled").checked = Boolean(data.enabled);
+  const select = $("expose-frame");
+  const chosen = data.frame || "";
+  select.replaceChildren(new Option(t("expose.choose"), ""));
+  for (const frame of lastFrames) {
+    select.append(new Option(`${frame.name} (${frame.host})`, frame.id));
+  }
+  if (chosen && !lastFrames.some((frame) => frame.id === chosen)) {
+    select.append(new Option(`${chosen} (${t("expose.missing")})`, chosen));
+  }
+  select.value = chosen;
+  $("expose-name").value = data.name || "";
+  const status = $("expose-status");
+  status.className = data.error ? "note bad" : "note";
+  status.textContent = data.running
+    ? t("expose.running", { instance: data.instance, port: data.port })
+    : t("expose.stopped");
+  if (data.error) status.textContent += ` ${data.error}`;
+}
+
+async function saveExposure() {
+  const request = {
+    enabled: $("expose-enabled").checked,
+    frame: $("expose-frame").value,
+    name: $("expose-name").value.trim(),
+  };
+  if (request.enabled && !request.frame) {
+    say("frames-message", t("expose.chooseError"), "bad");
+    return;
+  }
+  const answer = await post("/api/opendisplay", request);
+  if (!answer.ok) {
+    say("frames-message", (await answer.text()).trim(), "bad");
+    return;
+  }
+  exposureDirty = false;
+  renderExposure(await answer.json());
+  say("frames-message", t("expose.saved"), "ok");
+  setTimeout(() => loadExposure(), 1200);
+}
+
+for (const id of ["expose-enabled", "expose-frame", "expose-name"]) {
+  $(id).addEventListener("input", () => {
+    exposureDirty = true;
+  });
+  $(id).addEventListener("change", () => {
+    exposureDirty = true;
+  });
+}
+$("expose-save").addEventListener("click", saveExposure);
+
 function buildCard(initial) {
   let frame = initial;
   const element = document.createElement("article");
