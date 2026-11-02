@@ -1,0 +1,63 @@
+[package]
+name = "photoframe-bridge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "GPL-3.0-or-later"
+publish = false
+
+# A LAN service for the photo frame: speech in, a model reply, speech out. It exists
+# so the firmware needs no cloud key, no TLS and no JSON. See README.md.
+[dependencies]
+tiny_http = "0.12"
+# The web UI's JSON API and the settings file (`bridge.toml`).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+# Frames: the protocol crate's mDNS browser and OpenDisplay client (sans-IO), zlib
+# for images sent with DirectWrite, and plain HTTP to the frames' own portals
+# (no TLS: frames have none).
+opendisplay-proto = { path = "../opendisplay-proto" }
+miniz_oxide = { version = "0.8", features = ["with-alloc"] }
+ureq = { version = "2.12", default-features = false }
+# Rendering cards for the panels: glyph outlines from a TrueType font (DejaVu Sans
+# by default, it carries Cyrillic) and PNG previews of what a panel will show.
+ab_glyph = "0.2"
+png = "0.17"
+# Plugins may return a photograph (PNG or JPEG); it is decoded and fitted here.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# Recognition. Candle-based Whisper in pure Rust, so no whisper.cpp build step and no
+# ffmpeg. Pulls a model from the Hugging Face cache on first use.
+#
+# Vendored, not fetched: upstream 0.4.1 omits the `<|transcribe|>` token from the decode
+# prompt (see vendor/task-token.patch), which is invisible for English and fatal for every
+# other language - Russian came back as English prose or two-word fragments.
+rwhisper = { path = "vendor/rwhisper", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
+futures-util = { version = "0.3", optional = true }
+# `Whisper::transcribe` takes a `rodio::Source`, not a plain iterator, so the samples
+# are wrapped in a `SamplesBuffer` here. Pinned to the version rwhisper itself uses;
+# no decoders are requested, since the bridge only ever hands over raw samples.
+rodio = { version = "0.20.1", default-features = false, optional = true }
+# rwhisper reports a failed decode with `tracing::error!` and nothing else, so without
+# a subscriber a broken inference looks exactly like silence.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"], optional = true }
+
+[features]
+default = []
+# `cargo run --features whisper -- --stt whisper` transcribes for real. Left off by
+# default so the protocol can be exercised with the stubs before models are chosen.
+whisper = [
+    "dep:rwhisper",
+    "dep:tokio",
+    "dep:futures-util",
+    "dep:rodio",
+    "dep:tracing-subscriber",
+]
+
+# The recognition probe needs the same feature stack; declaring it here keeps
+# `--all-targets` from trying to build it without models wired in.
+[[example]]
+name = "transcribe"
+required-features = ["whisper"]
