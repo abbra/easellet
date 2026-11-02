@@ -1,0 +1,26 @@
+[package]
+name = "opendisplay-proto"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "GPL-3.0-or-later"
+publish = false
+
+# The device side of the OpenDisplay protocol: bytes in, responses out, no I/O.
+# `no_std` without an allocator, so the firmware decides where its buffers live.
+# See ../research/opendisplay-plan.md and TODO.md section P6.
+[dependencies]
+# Streaming inflate for DIRECT_WRITE. Only the core decoder is used: it writes
+# straight into the frame, so no 32 KiB window and no allocator.
+miniz_oxide = { version = "0.8", default-features = false }
+# Fixed-size config structs read and written in place, with their wire sizes
+# checked at compile time.
+zerocopy = { version = "0.8", features = ["derive"] }
+
+[dev-dependencies]
+# Tests compress frames the way a client would.
+miniz_oxide = { version = "0.8", features = ["with-alloc"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
