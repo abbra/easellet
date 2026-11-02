@@ -16,6 +16,11 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 config="${EASEL_BRIDGE_CONFIG:-$HOME/.config/easellet-bridge/bridge.toml}"
+# An installation from before the rename keeps its settings and token.
+if [ -z "${EASEL_BRIDGE_CONFIG+x}" ] && [ ! -f "$config" ] &&
+    [ -f "$HOME/.config/photoframe-bridge/bridge.toml" ]; then
+    config="$HOME/.config/photoframe-bridge/bridge.toml"
+fi
 log="${EASEL_BRIDGE_LOG:-$HOME/tmp/frame/logs/bridge.log}"
 args=(--config "$config")
 if [ -f "$config" ]; then

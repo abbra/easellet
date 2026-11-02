@@ -8,7 +8,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-cargo_bin="${PHOTOFRAME_HOST_CARGO:-/usr/bin/cargo}"
+cargo_bin="${EASEL_HOST_CARGO:-/usr/bin/cargo}"
 unset CARGO_HOME RUSTUP_HOME RUSTUP_TOOLCHAIN
 export PATH="/usr/bin:$PATH"
 # Keep build output next to the crate rather than in the throwaway directory.

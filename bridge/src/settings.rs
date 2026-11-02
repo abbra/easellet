@@ -406,12 +406,20 @@ pub fn normalize_wake(stems: &[String]) -> Vec<String> {
 }
 
 /// The default settings file: `$XDG_CONFIG_HOME/easellet-bridge/bridge.toml`.
+///
+/// An installation from before the rename keeps its settings: if the new file
+/// does not exist and `photoframe-bridge/bridge.toml` does, the old path wins.
 pub fn default_path() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("easellet-bridge").join("bridge.toml")
+    let current = base.join("easellet-bridge").join("bridge.toml");
+    let previous = base.join("photoframe-bridge").join("bridge.toml");
+    if !current.exists() && previous.exists() {
+        return previous;
+    }
+    current
 }
 
 #[cfg(unix)]

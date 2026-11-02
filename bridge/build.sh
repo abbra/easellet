@@ -11,8 +11,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The firmware pins the xtensa toolchain inside the project (.tools/rustup), and
 # scripts/env.sh puts it first on PATH. The bridge is a host program and belongs to
 # the distro Rust, so both the toolchain and the cargo/rustup homes are cleared here
-# rather than inherited. Override with PHOTOFRAME_HOST_CARGO if that is wrong.
-cargo_bin="${PHOTOFRAME_HOST_CARGO:-/usr/bin/cargo}"
+# rather than inherited. Override with EASEL_HOST_CARGO if that is wrong.
+cargo_bin="${EASEL_HOST_CARGO:-/usr/bin/cargo}"
 unset CARGO_HOME RUSTUP_HOME RUSTUP_TOOLCHAIN
 # The rustup shims in .tools/cargo/bin would otherwise still be found first and then
 # fail with "no default toolchain", so put the distro bin directory ahead of them.

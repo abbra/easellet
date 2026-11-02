@@ -1388,9 +1388,9 @@ mod tests {
         let mut settings = Settings::default();
         let reply = settings
             .set_ai_key("easellet-lan-2026")
-            .expect("19 printable bytes");
+            .expect("17 printable bytes");
         assert!(!reply.contains("easellet-lan-2026"), "{reply}");
-        assert!(reply.contains("19 chars"), "{reply}");
+        assert!(reply.contains("17 chars"), "{reply}");
         assert_eq!(settings.bridge_token(), Some("easellet-lan-2026"));
         // The same value has to survive a save/load round trip.
         assert_eq!(

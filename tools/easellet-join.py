@@ -13,7 +13,7 @@ before the port closes.
 
 Run it from the project root:
 
-    .venv-tools/bin/python tools/pfjoin.py
+    .venv-tools/bin/python tools/easellet-join.py
 
 Answering yes to the save prompt makes the next boot join by itself, which is
 reported by `info` as `wifi_auto=connected` with an address from `wifi status`.
@@ -106,7 +106,7 @@ def main() -> int:
 
     for label, reply in replies:
         if password and password in reply:
-            reply = reply.replace(password, "<redacted by pfjoin>")
+            reply = reply.replace(password, "<redacted by easellet-join>")
         print(f"$ {label}\n{reply or '<no reply>'}")
     return 0
 
