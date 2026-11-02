@@ -4,8 +4,9 @@
 //! (transcript -> answer), `/tts` (answer -> speech). They arrive one after
 //! another from the same address, so a turn is assembled by peer: `/stt` opens a
 //! turn, and `/llm` and `/tts` from the same peer within [`TURN_WINDOW`] fill it in.
-//! A rejected `/stt` ("not addressed", "no speech") is a turn too, closed at once:
-//! seeing what the bridge refused is half of tuning the wake word and the gate.
+//! Only captures the frame actually answered are kept: a `/stt` refused by the
+//! wake check or the filler check never reaches the history, so a conversation
+//! the frame merely overheard leaves no trace in the UI or the log.
 //! An `/llm` with no open turn (`ai ask` typed on the console) starts one.
 //!
 //! Kept in memory, newest last, bounded by [`CAPACITY`].
@@ -31,10 +32,8 @@ pub struct Turn {
     pub peer: String,
     /// `key`, `voice`, `console`, or empty (older frame, or text only).
     pub trigger: String,
-    /// What the recogniser heard, wake word included.
+    /// What was asked, with the wake word removed.
     pub heard: Option<String>,
-    /// Why the transcript went no further, when it did not.
-    pub rejected: Option<String>,
     pub answer: Option<String>,
     pub stt_ms: Option<u64>,
     pub llm_ms: Option<u64>,
@@ -79,7 +78,6 @@ impl History {
             peer: peer.to_owned(),
             trigger: trigger.to_owned(),
             heard: None,
-            rejected: None,
             answer: None,
             stt_ms: None,
             llm_ms: None,
@@ -95,26 +93,16 @@ impl History {
     fn open_turn(&mut self, peer: &str, waiting: fn(&Turn) -> bool) -> Option<&mut Turn> {
         self.turns.iter_mut().rev().find(|turn| {
             turn.peer == peer
-                && turn.rejected.is_none()
                 && turn.error.is_none()
                 && turn.opened.is_some_and(|at| at.elapsed() < TURN_WINDOW)
                 && waiting(turn)
         })
     }
 
-    /// `/stt` answered: `heard` is the transcript, `rejected` the reason it went
-    /// no further (or `None` when it was passed on).
-    pub fn heard(
-        &mut self,
-        peer: &str,
-        trigger: &str,
-        heard: Option<&str>,
-        rejected: Option<&str>,
-        ms: u64,
-    ) {
+    /// `/stt` answered: `heard` is the transcript the frame was answered with.
+    pub fn heard(&mut self, peer: &str, trigger: &str, heard: Option<&str>, ms: u64) {
         let turn = self.open(peer, trigger);
         turn.heard = heard.map(clip);
-        turn.rejected = rejected.map(clip);
         turn.stt_ms = Some(ms);
     }
 
@@ -164,13 +152,7 @@ mod tests {
     #[test]
     fn three_requests_from_one_frame_make_one_turn() {
         let mut history = History::default();
-        history.heard(
-            "10.0.0.5",
-            "key",
-            Some("Сколько будет 2 плюс 2?"),
-            None,
-            3_400,
-        );
+        history.heard("10.0.0.5", "key", Some("Сколько будет 2 плюс 2?"), 3_400);
         history.answered("10.0.0.5", "Сколько будет 2 плюс 2?", Ok("Четыре."), 620);
         history.spoke("10.0.0.5", Ok(42_168), 1_229);
         let turns = history.recent(10);
@@ -186,34 +168,23 @@ mod tests {
     }
 
     #[test]
-    fn a_rejection_is_kept_and_does_not_swallow_the_next_turn() {
+    fn each_capture_starts_a_new_turn() {
         let mut history = History::default();
-        history.heard(
-            "10.0.0.5",
-            "voice",
-            Some("Мама, дай сок."),
-            Some("not addressed"),
-            2_000,
-        );
-        history.heard("10.0.0.5", "voice", Some("Рамка, привет"), None, 2_000);
+        history.heard("10.0.0.5", "voice", Some("Рамка, привет"), 2_000);
         history.answered("10.0.0.5", "привет", Ok("Привет!"), 500);
+        history.heard("10.0.0.5", "voice", Some("Рамка, который час?"), 2_000);
+        history.answered("10.0.0.5", "который час?", Ok("Десять."), 400);
         let turns = history.recent(10);
         assert_eq!(turns.len(), 2);
-        assert_eq!(turns[0].answer.as_deref(), Some("Привет!"));
-        assert_eq!(turns[1].rejected.as_deref(), Some("not addressed"));
-        assert_eq!(turns[1].answer, None);
+        assert_eq!(turns[0].heard.as_deref(), Some("Рамка, который час?"));
+        assert_eq!(turns[0].answer.as_deref(), Some("Десять."));
+        assert_eq!(turns[1].answer.as_deref(), Some("Привет!"));
     }
 
     #[test]
     fn frames_do_not_mix_and_a_typed_question_is_its_own_turn() {
         let mut history = History::default();
-        history.heard(
-            "10.0.0.5",
-            "voice",
-            Some("Рамка, который час?"),
-            None,
-            1_000,
-        );
+        history.heard("10.0.0.5", "voice", Some("Рамка, который час?"), 1_000);
         history.answered("10.0.0.6", "Скажи одно слово.", Ok("Слово."), 300);
         history.answered("10.0.0.5", "который час?", Ok("Десять."), 400);
         let turns = history.recent(10);
@@ -228,7 +199,7 @@ mod tests {
     fn the_buffer_is_bounded() {
         let mut history = History::default();
         for _ in 0..CAPACITY + 5 {
-            history.heard("p", "voice", Some("x"), Some("no speech"), 1);
+            history.heard("p", "voice", Some("x"), 1);
         }
         assert_eq!(history.recent(usize::MAX).len(), CAPACITY);
         assert_eq!(history.recent(1)[0].id, (CAPACITY + 5) as u64);

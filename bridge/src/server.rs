@@ -117,7 +117,7 @@ pub struct Bridge {
     pub live: Option<Arc<RwLock<Live>>>,
     /// Where turns are recorded for the UI. `None` in tests.
     pub history: Option<Arc<Mutex<History>>>,
-    /// The last transcript `/stt` produced, accepted or not, for the history.
+    /// The transcript the last `/stt` was answered with, for the history.
     pub last_heard: Option<String>,
     /// Plugins as the assistant's tools: given the question and the frame's
     /// address, the spoken reply when a plugin takes the question. `None` in tests.
@@ -334,17 +334,20 @@ impl Bridge {
         let Some(history) = &self.history else {
             return;
         };
+        let ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        if path == "/stt" && response.status != 200 {
+            // A refused capture is not a command: it is dropped here as it was
+            // dropped at `/stt`, so a conversation the frame overheard leaves
+            // nothing in the history the UI shows or in the log.
+            return;
+        }
         let Ok(mut history) = history.lock() else {
             return;
         };
-        let ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let body = String::from_utf8_lossy(&response.body);
         let reason = body.trim().strip_prefix("ERR ").unwrap_or(body.trim());
         match path {
-            "/stt" if response.status == 200 => {
-                history.heard(peer, trigger, self.last_heard.as_deref(), None, ms);
-            }
-            "/stt" => history.heard(peer, trigger, self.last_heard.as_deref(), Some(reason), ms),
+            "/stt" => history.heard(peer, trigger, self.last_heard.as_deref(), ms),
             "/llm" => {
                 let result = if response.status == 200 {
                     Ok(body.trim())
@@ -399,6 +402,10 @@ impl Bridge {
                     return Response::text(400, "ERR empty utterance\n");
                 }
                 // `EASEL_BRIDGE_DUMP=<dir>` keeps the exact audio the device sent.
+                // It is the one place the bridge writes a voice stream to disk and
+                // only when the operator asks for it; everything a capture becomes
+                // otherwise (its transcript and its history turn) is dropped unless
+                // the transcript is a command for this frame.
                 // Without it there is no way to tell a failing microphone from a
                 // failing recogniser: the response only ever says "heard nothing".
                 if let Some(directory) = std::env::var_os("EASEL_BRIDGE_DUMP") {
@@ -421,10 +428,11 @@ impl Bridge {
                             .filter(|character| character.is_alphanumeric())
                             .count();
                         if letters < MIN_TRANSCRIPT_CHARS {
-                            eprintln!("  stt rejected: {text:?} ({letters} letters) - not speech");
+                            // The transcript is not printed: it is not a command, and
+                            // a log is a place speech the frame ignored must not stay.
+                            eprintln!("  stt ignored: {letters} letters - not speech");
                             return Response::text(500, "ERR stt: no speech\n");
                         }
-                        self.last_heard = Some(text.clone());
                         let named = self.wake_span(&text).is_some();
                         let question = self.without_wake(&text);
                         let asked = question
@@ -442,16 +450,21 @@ impl Bridge {
                             // The question may follow up by voice, as after the name.
                             self.addressed_at = Some(Instant::now());
                         } else if !self.is_addressed(&text) {
-                            eprintln!("  stt rejected: {text:?} - not addressed to the frame");
+                            // Deliberately no transcript in this line: the question was
+                            // for somebody else, so it must not survive in the log.
+                            eprintln!("  stt ignored: not addressed to the frame");
                             return Response::text(500, "ERR stt: not addressed\n");
                         }
                         let text = question;
                         if is_noise_transcript(&text) {
                             // The detector heard something, but the recogniser only
                             // found a filler: this is a noisy moment, not a question.
-                            eprintln!("  stt rejected: {text:?} - recogniser filler, not speech");
+                            eprintln!("  stt ignored: recogniser filler, not speech");
                             return Response::text(500, "ERR stt: no speech\n");
                         }
+                        // Only what the frame answers is kept for the history: the
+                        // wake word is already gone, so the record is the question.
+                        self.last_heard = Some(text.clone());
                         if let Some(code) = self.stt.language() {
                             self.last_lang = Some(code.to_owned());
                         }
@@ -830,6 +843,33 @@ mod tests {
         english.stt = Box::new(FixedStt("Frame, what is two plus two?"));
         let response = send(&mut english, "POST", "/stt", None, vec![0xFF; 16]);
         assert_eq!(response.status, 200);
+    }
+
+    #[test]
+    fn an_ignored_capture_leaves_no_turn_in_the_history() {
+        // The bridge must not become a transcript of the room: a capture nobody
+        // addressed to the frame is dropped without a record, and only the
+        // question the frame answers is kept.
+        let history = Arc::new(Mutex::new(History::default()));
+        let mut bridge = bridge(None);
+        bridge.history = Some(Arc::clone(&history));
+        bridge.wake = vec!["рамк".to_owned()];
+
+        bridge.stt = Box::new(FixedStt("Мама, дай мне сок."));
+        let overheard = send(&mut bridge, "POST", "/stt", None, vec![0xFF; 16]);
+        assert_eq!(overheard.status, 500);
+        assert_eq!(
+            history.lock().unwrap().recent(usize::MAX).len(),
+            0,
+            "a conversation not addressed to the frame was retained"
+        );
+
+        bridge.stt = Box::new(FixedStt("Рамка, который час?"));
+        let asked = send(&mut bridge, "POST", "/stt", None, vec![0xFF; 16]);
+        assert_eq!(asked.status, 200);
+        let turns = history.lock().unwrap().recent(usize::MAX);
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].heard.as_deref(), Some("который час?"));
     }
 
     #[test]
