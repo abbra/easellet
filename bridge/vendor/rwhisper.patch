@@ -1,0 +1,627 @@
+rwhisper 0.4.1, vendored with six changes
+========================================
+
+Source: https://crates.io/crates/rwhisper/0.4.1 (MIT/Apache-2.0), by Evan Almloff,
+part of the Floneum/kalosm project. `src/` is copied unmodified apart from the hunks
+below; `src/melfilters.bytes` and `src/melfilters128.bytes` are the crate's own mel
+filter banks. Examples from the published tarball were left out; `Cargo.toml` is the
+published normalised manifest with its dangling `[[example]]` entries and its "see
+Cargo.toml.orig" header removed, dependencies untouched.
+
+Why a copy instead of a version requirement
+-------------------------------------------
+
+Upstream builds the decoder prompt as `<|startoftranscript|>` plus the language token,
+and then never adds the task token (`TaskType::Unset` in `WhisperInner::transcribe`).
+Whisper was trained on `<|startoftranscript|><|lang|><|transcribe|><|notimestamps|>`, so
+the model is left guessing what it was asked to do. For English the guess is right often
+enough to look harmless; for Russian it is not. Measured on this machine, release build:
+
+| model          | input                      | upstream 0.4.1                        | patched      |
+|----------------|----------------------------|---------------------------------------|--------------|
+| small          | 10 s of Russian speech     | English prose ("In recent times...")  | Russian text |
+| small          | jfk.wav (English)          | correct                               | correct      |
+| base           | 10 s of Russian speech     | `" Вната"`                            | Russian text |
+| quantized tiny | 10 s of Russian speech     | empty                                 | not retested |
+
+The language token alone does not make the model transcribe rather than translate or
+invent. One token in the prompt is the whole difference, and the field is not reachable
+from the crate's public API, which is why this is a vendored patch rather than a
+workaround in our code.
+
+Bounding decode latency
+-----------------------
+
+Whisper's fallback ladder is six temperatures, and each pass can emit up to
+`max_target_positions` (448) tokens. On a noisy capture the model can keep emitting
+instead of choosing EOT. Measured here on a 1.8 s recording of room noise: the
+upstream ladder ran for more than four minutes without finishing and blocked the
+bridge's only request slot; a second `/health` could not be served. Clean speech was
+unaffected (2-7 s), so this is a noise-path failure rather than general slowness.
+
+The patch keeps the greedy pass and one sampled retry, caps the output at 128 tokens,
+and gives both passes a shared 20 s deadline. The same noisy capture now returns in
+25 s and normal Russian transcripts are byte-for-byte unchanged.
+
+Language detection and its candidates
+--------------------------------------
+
+Upstream cannot detect a language at all: `WhisperBuilder::language` is an
+`Option<WhisperLanguage>`, and `None` is turned into English before the model is
+built, so a multilingual model only ever transcribes English. The patch keeps
+`None` as "detect", runs Whisper's own one-step detector (the decoder's next-token
+logits at `<|startoftranscript|>`, argmax over the ~100 `<|xx|>` tokens) on the
+first 30 s window, and exposes the result through `Whisper::last_language` so the
+bridge can choose a matching voice. It also resets the choice at the start of every
+run, otherwise the first utterance's language would condition all the rest.
+
+Unrestricted detection is fine for a file and wrong for a microphone. A capture of
+room noise scores highest as Korean or Norwegian often enough to matter: the decode
+is then conditioned on that token and produces invented prose in it, which the
+answer follows. `WhisperBuilder::with_language_filter` therefore lets the caller
+name the codes that can occur - `ru,en,fi,fr` for this household - and the detector
+only scores those. It is a hint, not a restriction: a code outside the set is never
+produced, but nothing breaks if the model has only one language.
+
+Steering: a prompt and a language hint
+--------------------------------------
+
+`Whisper::set_prompt` gives the decoder text it treats as just heard,
+Whisper's own prompt mechanism: `<|startofprev|>` and the prompt's tokens (the
+last 223) go before `<|startoftranscript|>`, as model input only, never into
+the transcript; word timestamps go without it, since they align by position.
+`Whisper::set_language_hint` gives one language a head start of 2.5 logits in
+detection. Both are read at every utterance through a shared `Steering`.
+
+Measured on three captures from the frame (`small`):
+
+| capture                      | as before                 | hint ru | hint ru + prompt |
+|------------------------------|---------------------------|---------|------------------|
+| «Рамка» alone, short         | "Ram" (English)           | «Рам!»  | «Рамка.»         |
+| «Рамка» alone                | «Рамка.»                  | same    | same             |
+| «Рамка, покажи погоду в Эспоо» | «…покажи погоду ВСПУ.»  | same    | «…в Эспоо.»      |
+
+The prompt was «Рамка, покажи погоду в Эспоо. Рамка, какая погода в
+Хельсинки?». Over 30 earlier captures of room noise and chatter it produced no
+echo of itself; a few English hallucinations on mumbling ("you") became short
+Russian ones, and real English stayed English.
+
+Patch
+-----
+
+```diff
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -44,7 +44,7 @@
+     fmt::Display,
+     ops::Range,
+     str::FromStr,
+-    sync::{Arc, RwLock},
++    sync::{Arc, Mutex, RwLock},
+     time::Duration,
+ };
+ 
+@@ -307,6 +307,9 @@
+     /// Language.
+     language: Option<WhisperLanguage>,
+ 
++    /// Language codes auto-detection may choose from; empty means all of them.
++    language_filter: Vec<String>,
++
+     /// The cache location to use for the model (defaults DATA_DIR/kalosm/cache)
+     cache: kalosm_common::Cache,
+ }
+@@ -316,6 +319,7 @@
+         Self {
+             model: WhisperSource::default(),
+             language: Some(WhisperLanguage::English),
++            language_filter: Vec::new(),
+             cache: kalosm_common::Cache::default(),
+         }
+     }
+@@ -526,8 +530,21 @@
+             .await?;
+ 
+         let (rx, tx) = std::sync::mpsc::channel();
++        let language_slot = Arc::new(Mutex::new(None));
++        let worker_language_slot = Arc::clone(&language_slot);
++        let steering = Arc::new(Mutex::new(crate::model::Steering::default()));
++        let worker_steering = Arc::clone(&steering);
+         let thread = std::thread::spawn(move || {
+-            let mut model = WhisperInner::new(self, filename, tokenizer_filename, config).unwrap();
++            let mut model =
++                WhisperInner::new(
++                    self,
++                    filename,
++                    tokenizer_filename,
++                    config,
++                    worker_language_slot,
++                    worker_steering,
++                )
++                .unwrap();
+             while let Ok(message) = tx.recv() {
+                 match message {
+                     WhisperMessage::Kill => return,
+@@ -543,6 +560,8 @@
+                 thread: Some(thread),
+                 sender: rx,
+             }),
++            language: language_slot,
++            steering,
+         })
+     }
+ 
+@@ -558,6 +577,20 @@
+         self
+     }
+ 
++    /// Restrict auto-detection to these two-letter language codes.
++    ///
++    /// Whisper's detector scores about a hundred languages, and on noise, music
++    /// or a cough the winner is regularly a language nobody in the room speaks:
++    /// the transcription is then conditioned on that language and comes out as
++    /// invented prose in it. Naming the languages that can actually occur keeps
++    /// the frame from answering a door in Korean. Empty means no restriction.
++    ///
++    /// Ignored when a fixed language is set with [`WhisperBuilder::with_language`].
++    pub fn with_language_filter(mut self, languages: Vec<String>) -> Self {
++        self.language_filter = languages;
++        self
++    }
++
+     /// Set the cache location to use for the model (defaults DATA_DIR/kalosm/cache)
+     pub fn with_cache(mut self, cache: kalosm_common::Cache) -> Self {
+         self.cache = cache;
+@@ -912,6 +945,10 @@
+ /// A quantized whisper audio transcription model.
+ pub struct Whisper {
+     inner: Arc<WhisperDrop>,
++    /// Last language detected by the worker, shared with the bridge.
++    language: Arc<Mutex<Option<String>>>,
++    /// Prompt and language hint for the decoder (see `set_prompt`).
++    steering: Arc<Mutex<crate::model::Steering>>,
+ }
+ 
+ impl Whisper {
+@@ -926,6 +963,33 @@
+         Ok(model)
+     }
+ 
++    /// Text the decoder treats as just heard before each utterance: names and
++    /// words it should expect ("Рамка, покажи погоду в Эспоо"). Whisper's
++    /// prompt mechanism; empty for none. Takes effect from the next utterance.
++    pub fn set_prompt(&self, text: &str) {
++        if let Ok(mut steering) = self.steering.lock() {
++            text.clone_into(&mut steering.prompt);
++        }
++    }
++
++    /// The language the next utterance is expected in (two-letter code), given
++    /// a head start in detection; `None` for plain detection.
++    pub fn set_language_hint(&self, code: Option<&str>) {
++        if let Ok(mut steering) = self.steering.lock() {
++            steering.language_hint = code.map(str::to_owned);
++        }
++    }
++
++    /// Two-letter code of the last language the decoder detected, if any.
++    ///
++    /// `None` means the model was built with a fixed language, or no transcription
++    /// has run yet. The bridge uses this to pick a TTS voice that matches the
++    /// question rather than the frame's stored `ai.lang`.
++    #[must_use]
++    pub fn last_language(&self) -> Option<String> {
++        self.language.lock().ok().and_then(|slot| slot.clone())
++    }
++
+     /// Transcribe some audio into text.
+     ///
+     /// Dropping the returned channel will stop the transcription early.
+--- a/src/model.rs
++++ b/src/model.rs
+@@ -10,6 +10,7 @@
+     num::NonZeroUsize,
+     ops::RangeInclusive,
+     path::PathBuf,
++    sync::{Arc, Mutex},
+     time::{Duration, Instant},
+ };
+ use tokenizers::Tokenizer;
+@@ -93,11 +94,25 @@
+     Compression(std::io::Error),
+ }
+ 
++/// What the caller steers decoding with, shared with the worker thread.
++#[derive(Debug, Default)]
++pub(crate) struct Steering {
++    /// Text the model treats as just heard (vocabulary such as rare names).
++    pub(crate) prompt: String,
++    /// Two-letter code of the language the caller expects.
++    pub(crate) language_hint: Option<String>,
++}
++
++/// Logit head start of the hinted language in detection (e^2.5 ~ 12x odds).
++const HINT_BONUS: f32 = 2.5;
++
+ pub(crate) struct WhisperInner {
+     mel_filters: Vec<f32>,
+     device: Device,
+     decoder: Decoder,
+     config: Config,
++    /// Set by the worker thread so the bridge can choose a TTS voice.
++    language_slot: Arc<Mutex<Option<String>>>,
+ }
+ 
+ impl WhisperInner {
+@@ -106,6 +121,8 @@
+         weights_filename: PathBuf,
+         tokenizer_filename: PathBuf,
+         config_filename: PathBuf,
++        language_slot: Arc<Mutex<Option<String>>>,
++        steering: Arc<Mutex<Steering>>,
+     ) -> Result<Self, WhisperLoadingError> {
+         let device = accelerated_device_if_available()?;
+         let tokenizer =
+@@ -132,11 +149,15 @@
+             config.clone(),
+             settings.model.is_quantized(),
+         )?;
++        let auto_language = settings.model.is_multilingual() && settings.language.is_none();
+         let language_token = if settings.model.is_multilingual() {
+-            let language = settings.language.unwrap_or(WhisperLanguage::English);
+-            match token_id(&tokenizer, &format!("<|{language}|>")) {
+-                Ok(token_id) => Some(token_id),
+-                Err(_) => return Err(WhisperLoadingError::UnsupportedLanguage(language)),
++            match settings.language {
++                Some(language) => match token_id(&tokenizer, &format!("<|{language}|>")) {
++                    Ok(token_id) => Some(token_id),
++                    Err(_) => return Err(WhisperLoadingError::UnsupportedLanguage(language)),
++                },
++                // No language was requested: detect it from the first chunk below.
++                None => None,
+             }
+         } else {
+             None
+@@ -147,7 +168,10 @@
+             0,
+             &device,
+             language_token,
++            auto_language,
++            settings.language_filter,
+             attention_heads,
++            steering,
+         )?;
+ 
+         Ok(Self {
+@@ -155,6 +179,7 @@
+             device,
+             decoder,
+             config,
++            language_slot,
+         })
+     }
+ 
+@@ -177,7 +202,7 @@
+             &mel,
+             pcm_data.len(),
+             Task {
+-                task_type: TaskType::Unset,
++                task_type: TaskType::Transcribe,
+                 word_level_time_stamps,
+                 without_timestamps: true,
+             },
+@@ -185,6 +210,11 @@
+         ) {
+             tracing::error!("Error transcribing audio: {err}");
+         }
++        if let Some(code) = self.decoder.detected_language() {
++            if let Ok(mut slot) = self.language_slot.lock() {
++                *slot = Some(code.to_owned());
++            }
++        }
+     }
+ }
+ 
+@@ -200,8 +230,23 @@
+     no_speech_token: u32,
+     no_timestamps_token: u32,
+     language_token: Option<u32>,
++    /// Detect the language from the audio when `language_token` is `None`.
++    auto_language: bool,
++    /// The language chosen for the current utterance, including a detected one.
++    active_language: Option<u32>,
++    /// Two-letter code of a detected language, for the caller's voice choice.
++    detected_language: Option<String>,
++    /// Every `<|xx|>` token in the tokenizer, with its code, for detection.
++    language_tokens: Vec<(u32, String)>,
++    /// Codes [`Decoder::detect_language`] may return; empty for all of them.
++    language_filter: Vec<String>,
+     timestamp_token_range: RangeInclusive<u32>,
+     attention_heads: Option<&'static [[usize; 2]]>,
++    /// `<|startofprev|>`, which introduces a text prompt before the transcript.
++    sot_prev_token: Option<u32>,
++    /// The caller's prompt and language hint (`Whisper::set_prompt`,
++    /// `Whisper::set_language_hint`), read at every utterance.
++    steering: Arc<Mutex<Steering>>,
+ }
+ 
+ impl Decoder {
+@@ -212,7 +257,10 @@
+         seed: u64,
+         device: &Device,
+         language_token: Option<u32>,
++        auto_language: bool,
++        language_filter: Vec<String>,
+         attention_heads: Option<&'static [[usize; 2]]>,
++        steering: Arc<Mutex<Steering>>,
+     ) -> candle_core::Result<Self> {
+         let no_timestamps_token = token_id(&tokenizer, m::NO_TIMESTAMPS_TOKEN)?;
+         // Suppress the notimestamps token when in timestamps mode.
+@@ -228,6 +276,7 @@
+             .collect();
+         let suppress_tokens = Tensor::new(suppress_tokens.as_slice(), device)?;
+         let sot_token = token_id(&tokenizer, m::SOT_TOKEN)?;
++        let sot_prev_token = token_id(&tokenizer, "<|startofprev|>").ok();
+         let transcribe_token = token_id(&tokenizer, m::TRANSCRIBE_TOKEN)?;
+         let translate_token = token_id(&tokenizer, m::TRANSLATE_TOKEN)?;
+         let eot_token = token_id(&tokenizer, m::EOT_TOKEN)?;
+@@ -240,6 +289,18 @@
+             .collect::<candle_core::Result<Vec<_>>>()?;
+         let timestamp_token_range =
+             *timestamp_tokens.first().unwrap()..=*timestamp_tokens.last().unwrap();
++        // Whisper's language tokens are the two-letter `<|xx|>` entries. Picking the
++        // largest logit among them is the reference language-detection step, done
++        // here because the tokenizer is already open.
++        let language_tokens: Vec<(u32, String)> = tokenizer
++            .get_vocab(true)
++            .into_iter()
++            .filter_map(|(token, id)| {
++                let code = token.strip_prefix("<|")?.strip_suffix("|>")?;
++                (code.len() == 2 && code.bytes().all(|byte| byte.is_ascii_lowercase()))
++                    .then(|| (id, code.to_owned()))
++            })
++            .collect();
+         debug_assert!(timestamp_tokens
+             .iter()
+             .all(|t| timestamp_token_range.contains(t)));
+@@ -255,12 +316,44 @@
+             eot_token,
+             no_speech_token,
+             language_token,
++            auto_language,
++            active_language: language_token,
++            detected_language: None,
++            language_tokens,
++            language_filter,
+             no_timestamps_token,
+             timestamp_token_range,
+             attention_heads,
++            sot_prev_token,
++            steering,
+         })
+     }
+ 
++    /// `<|startofprev|>` and the prompt's tokens, the last 223 of them as the
++    /// reference implementation keeps; empty when there is no prompt.
++    fn prompt_prefix(&self) -> Vec<u32> {
++        let Some(sot_prev) = self.sot_prev_token else {
++            return Vec::new();
++        };
++        let text = self
++            .steering
++            .lock()
++            .map(|steering| steering.prompt.trim().to_owned())
++            .unwrap_or_default();
++        if text.is_empty() {
++            return Vec::new();
++        }
++        let Ok(encoding) = self.tokenizer.encode(format!(" {text}"), false) else {
++            return Vec::new();
++        };
++        let ids = encoding.get_ids();
++        let keep = &ids[ids.len().saturating_sub(223)..];
++        let mut prefix = Vec::with_capacity(keep.len() + 1);
++        prefix.push(sot_prev);
++        prefix.extend_from_slice(keep);
++        prefix
++    }
++
+     pub(crate) fn is_special(&self, token: u32) -> bool {
+         self.timestamp_token_range.contains(&token)
+             || token == self.sot_token
+@@ -289,6 +382,65 @@
+         Ok(tensor)
+     }
+ 
++    /// The language detected for the utterance just transcribed, if auto mode ran.
++    pub(crate) fn detected_language(&self) -> Option<&str> {
++        self.detected_language.as_deref()
++    }
++
++    /// Return the most likely `<|xx|>` language token for this chunk.
++    ///
++    /// This is one decoder step with `<|startoftranscript|>` alone, which is what
++    /// Whisper's own language detection does. It is only reached when the model was
++    /// built without a fixed language, so a multilingual bridge pays one extra
++    /// token of work per utterance and can then answer each speaker in their own
++    /// language.
++    fn detect_language(&mut self, audio_features: &Tensor) -> candle_core::Result<u32> {
++        let tokens = [self.sot_token];
++        let ys = match &mut self.model {
++            ModelType::Quantized(model) => {
++                let mut cache = TextDecoderCache::new();
++                model
++                    .decoder
++                    .forward(&tokens, audio_features, &mut cache, None)?
++            }
++            ModelType::Unquantized(model) => {
++                let tokens = Tensor::new(tokens.as_slice(), audio_features.device())?.unsqueeze(0)?;
++                model.decoder.forward(&tokens, audio_features, true)?
++            }
++        };
++        let logits = match &mut self.model {
++            ModelType::Quantized(model) => model.decoder.final_linear(&ys.i(..1)?)?,
++            ModelType::Unquantized(model) => model.decoder.final_linear(&ys.i(..1)?)?,
++        }
++        .i(0)?
++        .i(0)?;
++        let hint = self
++            .steering
++            .lock()
++            .ok()
++            .and_then(|steering| steering.language_hint.clone());
++        let mut best: Option<(f32, u32)> = None;
++        for (id, code) in &self.language_tokens {
++            // An empty filter means every language, which is Whisper's own
++            // behaviour; a filter is how a caller says which ones can occur here.
++            if !self.language_filter.is_empty() && !self.language_filter.contains(code) {
++                continue;
++            }
++            let mut score = logits.i(*id as usize)?.to_scalar::<f32>()?;
++            // The caller's expected language starts ahead: a clear sentence in
++            // another language still wins, a lone short word («Рамка», heard
++            // as English "Ram") does not.
++            if hint.as_deref() == Some(code.as_str()) {
++                score += HINT_BONUS;
++            }
++            if best.is_none_or(|(best_score, _)| score > best_score) {
++                best = Some((score, *id));
++            }
++        }
++        best.map(|(_, id)| id)
++            .ok_or_else(|| candle_core::Error::Msg("no language tokens in tokenizer".to_owned()))
++    }
++
+     fn decode(
+         &mut self,
+         audio_features: &Tensor,
+@@ -296,12 +448,13 @@
+         task: Task,
+         previous_tokens: &[u32],
+         n_frames: usize,
++        deadline: Instant,
+     ) -> Result<DecodingResult, WhisperError> {
+         let sample_len = self.model.config().max_target_positions / 2;
+         let mut sum_logprob = 0f64;
+         let mut no_speech_prob = f64::NAN;
+         let mut tokens = vec![self.sot_token];
+-        if let Some(language_token) = self.language_token {
++        if let Some(language_token) = self.active_language.or(self.language_token) {
+             tokens.push(language_token);
+         }
+         match task.task_type {
+@@ -317,7 +470,16 @@
+         tokens.extend(previous_tokens);
+         // The tokens that are queued for decoding
+         let n_start_tokens = tokens.len();
+-        let mut queued_tokens = tokens.clone();
++        // A prompt is model input only: it goes before `<|startoftranscript|>`
++        // in what the decoder sees, never into `tokens`, whose text is the
++        // result. Word timestamps align attention by position, so they go
++        // without it.
++        let mut queued_tokens = if task.word_level_time_stamps {
++            Vec::new()
++        } else {
++            self.prompt_prefix()
++        };
++        queued_tokens.extend_from_slice(&tokens);
+         let mut cache = TextDecoderCache::new();
+         let mut attention_output = None;
+         for i in 0..sample_len {
+@@ -432,7 +594,10 @@
+                 .to_scalar::<f32>()? as f64;
+             // If we have read the maximum number of tokens, stop regardless of the eot token
+             // Or if word level timestamps are disabled, stop as soon was we reach the eot token
+-            if tokens.len() > self.model.config().max_target_positions
++            // A deadline is the last resort: noise can make the model loop for minutes.
++            if tokens.len() > 128
++                || tokens.len() > self.model.config().max_target_positions
++                || Instant::now() >= deadline
+                 || (!task.word_level_time_stamps && next_token == self.eot_token)
+             {
+                 break;
+@@ -552,10 +717,21 @@
+         previous_tokens: &[u32],
+         n_frames: usize,
+     ) -> Result<DecodingResult, WhisperError> {
+-        for (i, &t) in m::TEMPERATURES.iter().enumerate() {
+-            let dr: Result<DecodingResult, WhisperError> =
+-                self.decode(audio_features, t, task, previous_tokens, n_frames);
+-            if i == m::TEMPERATURES.len() - 1 {
++        // The full ladder is six passes and the bridge has one request slot. Two
++        // greedy/slightly-sampled passes are enough for clean speech; more than
++        // that just multiplies the time a noisy capture can block the server.
++        let temperatures = &m::TEMPERATURES[..m::TEMPERATURES.len().min(2)];
++        let deadline = Instant::now() + Duration::from_secs(20);
++        for (i, &t) in temperatures.iter().enumerate() {
++            let dr: Result<DecodingResult, WhisperError> = self.decode(
++                audio_features,
++                t,
++                task,
++                previous_tokens,
++                n_frames,
++                deadline,
++            );
++            if i == temperatures.len() - 1 {
+                 return dr;
+             }
+             // On errors, we try again with a different temperature.
+@@ -585,6 +761,10 @@
+         // TODO: This should be dynamic based on how much memory the model uses and how much memory is available
+         const MAX_CHUNKS: usize = 1;
+ 
++        // A fixed language survives from load time; auto mode starts fresh for every
++        // utterance, so a Russian question cannot set the language for the next one.
++        self.active_language = self.language_token;
++        self.detected_language = None;
+         let (_, content_frames) = mel.dims2()?;
+         let mut seek = 0;
+         let start_time = Instant::now();
+@@ -612,6 +792,15 @@
+             let batched_mel_segment = Tensor::stack(&chunked, 0)?;
+             let batched_audio_features = self.encode(&batched_mel_segment)?;
+             let split = batched_audio_features.chunk(chunk_indices.len(), 0)?;
++            if self.auto_language && self.active_language.is_none() {
++                let token = self.detect_language(&split[0])?;
++                self.active_language = Some(token);
++                self.detected_language = self
++                    .language_tokens
++                    .iter()
++                    .find(|(id, _)| *id == token)
++                    .map(|(_, code)| code.clone());
++            }
+ 
+             // Tokens that are remaining in the last chunk's sentence fragment
+             let mut tokens_in_sentence_fragment = Vec::new();
+--- a/src/quantized/timestamps.rs
++++ b/src/quantized/timestamps.rs
+@@ -4,7 +4,6 @@
+ use candle_core::{CpuStorage, IndexOp, InplaceOp1, Tensor, D};
+ use candle_nn::ops::softmax_last_dim;
+ use candle_transformers::models::whisper::{HOP_LENGTH, N_FRAMES, SAMPLE_RATE};
+-use core::f32;
+ use rayon::iter::*;
+ use std::num::NonZeroUsize;
+ 
+```
+
+The last hunk only drops an import that `f32::INFINITY` no longer needs, so the
+vendored crate builds without a deprecation warning.
+
+Reproducing
+-----------
+
+```bash
+curl -L https://crates.io/api/v1/crates/rwhisper/0.4.1/download -o /tmp/rwhisper-0.4.1.crate
+tar xf /tmp/rwhisper-0.4.1.crate -C /tmp
+diff -ru /tmp/rwhisper-0.4.1/src bridge/vendor/rwhisper/src    # expect exactly the hunks above
+```
+
+If a later rwhisper release stops using `TaskType::Unset` here, drop the vendored copy,
+restore `rwhisper = "0.4"` in `bridge/Cargo.toml`, and re-run
+
+```bash
+cargo run --release --features whisper --example transcribe -- small ru <file.wav>
+```
+
+to confirm the patch is no longer needed. That example exists for exactly this check.

@@ -1,0 +1,164 @@
+# rwhisper 0.4.1, vendored - see ../rwhisper.patch for why and for the code changes.
+#
+# This is the manifest Cargo published in the 0.4.1 tarball, which it had already
+# normalised, with two differences from that tarball: the `[[example]]` stanzas pointing
+# at files that were not vendored are gone, and the generated header no longer points at
+# a `Cargo.toml.orig` that is not here either. Dependency versions are untouched.
+
+[package]
+edition = "2021"
+name = "rwhisper"
+version = "0.4.1"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "A simple interface for Whisper transcription models in Rust"
+readme = false
+keywords = [
+    "ai",
+    "whisper",
+    "transcription",
+]
+license = "MIT/Apache-2.0"
+repository = "https://github.com/floneum/floneum"
+
+[features]
+accelerate = [
+    "dep:accelerate-src",
+    "candle-core/accelerate",
+    "candle-nn/accelerate",
+    "candle-transformers/accelerate",
+]
+cuda = [
+    "candle-core/cuda",
+    "candle-nn/cuda",
+    "candle-transformers/cuda",
+]
+cudnn = ["candle-core/cudnn"]
+metal = [
+    "candle-core/metal",
+    "candle-nn/metal",
+    "candle-transformers/metal",
+    "kalosm-common/metal",
+]
+mkl = [
+    "dep:intel-mkl-src",
+    "candle-core/mkl",
+    "candle-nn/mkl",
+    "candle-transformers/mkl",
+]
+nccl = [
+    "cuda",
+    "cudarc/nccl",
+    "dep:half",
+]
+serde = ["dep:serde"]
+
+[lib]
+name = "rwhisper"
+path = "src/lib.rs"
+
+[dependencies.accelerate-src]
+version = "0.3.2"
+optional = true
+
+[dependencies.byteorder]
+version = "1.4.3"
+
+[dependencies.candle-core]
+version = "0.8.2"
+
+[dependencies.candle-nn]
+version = "0.8.2"
+
+[dependencies.candle-transformers]
+version = "0.8.2"
+
+[dependencies.cpal]
+version = "0.15.1"
+
+[dependencies.cudarc]
+version = "0.9.14"
+features = ["f16"]
+optional = true
+
+[dependencies.flate2]
+version = "1.0.35"
+
+[dependencies.futures-channel]
+version = "0.3.31"
+
+[dependencies.futures-util]
+version = "0.3.28"
+
+[dependencies.half]
+version = "2.3.1"
+features = [
+    "num-traits",
+    "use-intrinsics",
+    "rand_distr",
+]
+optional = true
+
+[dependencies.hf-hub]
+version = "0.3.1"
+
+[dependencies.hound]
+version = "3.5"
+
+[dependencies.intel-mkl-src]
+version = "0.8.1"
+features = ["mkl-static-lp64-iomp"]
+optional = true
+
+[dependencies.kalosm-common]
+version = "0.4.0"
+
+[dependencies.kalosm-language-model]
+version = "0.4.0"
+
+[dependencies.kalosm-model-types]
+version = "0.4.0"
+
+[dependencies.rand]
+version = "0.8.5"
+
+[dependencies.rayon]
+version = "1.10.0"
+
+[dependencies.rodio]
+version = "0.20.1"
+
+[dependencies.serde]
+version = "1.0.209"
+optional = true
+
+[dependencies.serde_json]
+version = "1.0.107"
+
+[dependencies.thiserror]
+version = "2.0.7"
+
+[dependencies.tokenizers]
+version = "0.21.0"
+
+[dependencies.tracing]
+version = "0.1.37"
+
+[dev-dependencies.anyhow]
+version = "1.0.94"
+
+[dev-dependencies.kalosm]
+version = "0.4.0"
+features = ["sound"]
+
+[dev-dependencies.tokio]
+version = "1.32.0"
+features = ["full"]
+
+[dev-dependencies.tracing-subscriber]
+version = "0.3.19"
