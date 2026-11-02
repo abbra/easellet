@@ -1,0 +1,28 @@
+# Local tools and sensitive device backups
+.venv-tools/
+.tools/
+.embuild/
+backups/
+sdkconfig
+sdkconfig.old
+
+# Vendor reference checkout
+research/vendor/
+research/esp-idf-template/
+research/ref/opendisplay-firmware/
+research/ref/py-opendisplay/
+
+# Future Rust build artifacts
+/target/
+bridge/target
+opendisplay-proto/target
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local agent state
+.pi/
+
+# Research notes and captures (not committed yet)
+research/
