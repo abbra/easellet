@@ -1,0 +1,40 @@
+name = "ci"
+title = "Пул-реквесты и проверки"
+description = "Последние открытые PR репозитория GitHub и сколько их проверок упало, идёт и прошло (GitHub Actions и внешние CI). Без изменений — без обновления рамки."
+run = "run.py"
+timeout_s = 40
+outputs = ["card", "none"]
+default_every = "15m"
+
+[[param]]
+id = "repo"
+type = "string"
+title = "Репозиторий"
+required = true
+note = "владелец/имя, например rust-lang/rust."
+
+[[param]]
+id = "base"
+type = "string"
+title = "Целевая ветка"
+note = "Только PR в эту ветку; пусто — все."
+
+[[param]]
+id = "count"
+type = "choice"
+title = "Сколько PR"
+choices = ["3", "4", "5", "6", "7"]
+default = "6"
+
+[[param]]
+id = "api"
+type = "url"
+title = "Адрес API"
+default = "https://api.github.com"
+note = "Для GitHub Enterprise: https://<сервер>/api/v3."
+
+[[param]]
+id = "token"
+type = "secret"
+title = "Токен GitHub"
+note = "Fine-grained, только чтение: Pull requests, Checks, Commit statuses. Без токена GitHub даёт 60 запросов в час, и за раз проверяются только 3 PR."

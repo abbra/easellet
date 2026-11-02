@@ -1,0 +1,20 @@
+# The smallest useful plugin: a greeting card. A template for your own.
+name = "hello"
+title = "Привет"
+description = "Карточка с приветствием и временем. Пример плагина на Python."
+run = "run.py"
+timeout_s = 5
+outputs = ["card"]
+
+[[param]]
+id = "name"
+type = "string"
+title = "Кому"
+default = "семья"
+
+[[param]]
+id = "accent"
+type = "choice"
+title = "Цвет"
+choices = ["blue", "red", "green", "yellow", "black"]
+default = "green"

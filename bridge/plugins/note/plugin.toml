@@ -1,0 +1,30 @@
+name = "note"
+title = "Записка"
+description = "Сообщение на рамку: заголовок и текст."
+run = "run.py"
+timeout_s = 5
+outputs = ["card"]
+
+[[param]]
+id = "title"
+type = "string"
+title = "Заголовок"
+default = "Записка"
+
+[[param]]
+id = "text"
+type = "text"
+title = "Текст"
+
+[[param]]
+id = "accent"
+type = "choice"
+title = "Цвет"
+choices = ["blue", "red", "green", "yellow", "black"]
+default = "blue"
+
+[assistant]
+text_param = "text"
+phrases = ["оставь записку"]
+intent = "оставить записку"
+description = "Show a short note with a title and text on the frame."

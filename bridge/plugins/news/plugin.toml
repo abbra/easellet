@@ -1,0 +1,27 @@
+name = "news"
+title = "Новости"
+description = "Заголовки из ленты RSS или Atom. Если заголовки не изменились, рамка не обновляется."
+run = "run.py"
+timeout_s = 20
+outputs = ["card", "none"]
+default_every = "1h"
+
+[[param]]
+id = "url"
+type = "url"
+title = "Адрес ленты"
+required = true
+default = "https://yle.fi/rss/uutiset/paauutiset"
+
+[[param]]
+id = "count"
+type = "choice"
+title = "Сколько заголовков"
+choices = ["3", "4", "5", "6", "7"]
+default = "6"
+
+[[param]]
+id = "title"
+type = "string"
+title = "Заголовок карточки"
+note = "Пусто — название ленты."

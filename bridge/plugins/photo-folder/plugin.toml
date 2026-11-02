@@ -1,0 +1,28 @@
+name = "photo-folder"
+title = "Фото из папки"
+description = "По очереди показывает фотографии из папки на машине моста (JPEG и PNG)."
+run = "run.py"
+timeout_s = 20
+outputs = ["image", "none"]
+default_every = "1h"
+
+[[param]]
+id = "folder"
+type = "string"
+title = "Папка"
+required = true
+note = "Полный путь на машине моста, например /home/me/Pictures/frame."
+
+[[param]]
+id = "order"
+type = "choice"
+title = "Порядок"
+choices = ["sequential", "random"]
+default = "sequential"
+
+[[param]]
+id = "fit"
+type = "choice"
+title = "Кадрирование"
+choices = ["cover", "contain"]
+default = "cover"

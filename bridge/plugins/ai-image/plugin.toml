@@ -1,0 +1,51 @@
+name = "ai-image"
+title = "Картинка по описанию"
+description = "Генерирует картинку через сервис с API, совместимым с OpenAI Images (локальный или облачный)."
+run = "run.py"
+timeout_s = 110
+outputs = ["image"]
+
+[[param]]
+id = "prompt"
+type = "text"
+title = "Что нарисовать"
+required = true
+
+[[param]]
+id = "endpoint"
+type = "url"
+title = "Адрес сервиса"
+required = true
+default = "http://127.0.0.1:8090/v1/images/generations"
+note = "POST /v1/images/generations: локальный сервер или облако."
+
+[[param]]
+id = "model"
+type = "string"
+title = "Модель"
+note = "Как её называет сервис; пусто — модель сервиса по умолчанию."
+
+[[param]]
+id = "size"
+type = "choice"
+title = "Размер"
+choices = ["1280x768", "1024x1024", "1536x1024", "1792x1024"]
+default = "1280x768"
+
+[[param]]
+id = "api_key"
+type = "secret"
+title = "Ключ API"
+
+[[param]]
+id = "fit"
+type = "choice"
+title = "Кадрирование"
+choices = ["cover", "contain"]
+default = "cover"
+
+[assistant]
+text_param = "prompt"
+phrases = ["нарисуй", "сгенерируй картинку"]
+intent = "нарисовать картинку"
+description = "Generate a picture from the user's description and show it on the frame."

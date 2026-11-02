@@ -1,0 +1,35 @@
+name = "weather"
+title = "Погода"
+description = "Прогноз на несколько дней от Open-Meteo: без ключа и регистрации."
+run = "run.py"
+timeout_s = 20
+outputs = ["card"]
+default_every = "3h"
+
+[[param]]
+id = "place"
+type = "location"
+title = "Место"
+required = true
+default = "Хельсинки"
+note = "Название города или «широта,долгота», например 60.17,24.94."
+
+[[param]]
+id = "days"
+type = "choice"
+title = "Дней"
+choices = ["3", "4", "5", "6"]
+default = "4"
+
+[[param]]
+id = "question"
+type = "text"
+title = "Вопрос"
+hidden = true
+note = "Заполняет ассистент: «покажи погоду в Эспоо» показывает Эспоо вместо места по умолчанию."
+
+[assistant]
+text_param = "question"
+phrases = ["покажи погоду", "какая погода", "погоду покажи", "show weather", "show the weather", "what is the weather", "weather in"]
+intent = "показать погоду"
+description = "Show the weather forecast for the next days on the frame."

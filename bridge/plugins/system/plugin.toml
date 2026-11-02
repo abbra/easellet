@@ -1,0 +1,8 @@
+# Host status as a list card, in plain shell: plugins need no Python.
+name = "system"
+title = "Состояние моста"
+description = "Нагрузка, память и диск машины, где работает мост. Пример плагина на sh."
+run = "run.sh"
+timeout_s = 5
+outputs = ["card"]
+default_every = "30m"
