@@ -43,10 +43,12 @@ else
 fi
 host="${addr%:*}"
 port="${addr##*:}"
-# Dumps, wavs and logs belong under ~/tmp/frame: they are evidence for the next
-# question about a misheard word, and /tmp is cleared by reboots.
+# Logs belong under ~/tmp/frame: /tmp is cleared by reboots.
 mkdir -p "$HOME/tmp/frame/logs"
-export EASEL_BRIDGE_DUMP="${EASEL_BRIDGE_DUMP-$HOME/tmp/frame/stt-dumps}"
+# Dumps are opt-in. `EASEL_BRIDGE_DUMP` writes *every* `/stt` body to disk, including
+# speech the frame was not part of, so the bridge must not enable it behind the
+# operator's back. Ask for it only while diagnosing a microphone:
+#   EASEL_BRIDGE_DUMP=$HOME/tmp/frame/stt-dumps ./bridge/scripts/serve-local.sh
 
 old=$(ss -lptnH "sport = :$port" | grep -o 'pid=[0-9]*' | cut -d= -f2 | head -1)
 if [ -n "$old" ]; then
