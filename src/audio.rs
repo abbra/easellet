@@ -1089,6 +1089,14 @@ impl Audio {
         if pcm.is_empty() || !pcm.len().is_multiple_of(FRAME_BYTES) {
             return Err("ERR audio PCM length is not whole stereo frames\r\n".into());
         }
+        // The same I2S port carries both directions, so playback closes the
+        // microphone. Leaving `monitoring` set made the next idle tick read a
+        // stopped driver (`ESP_ERR_INVALID_STATE`) and the watcher disarm itself
+        // after `ai ask`; clearing it here lets `voice_poll` reopen the mic after
+        // the answer, and keeps the frame from hearing its own reply.
+        if self.monitoring {
+            self.monitor_stop(i2c)?;
+        }
         self.start()?;
         thread::sleep(Duration::from_millis(30));
         if let Err(error) = es8311_start(i2c, self.volume_db) {
