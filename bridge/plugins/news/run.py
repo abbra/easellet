@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
-from photoframe_plugin import Plugin  # noqa: E402
+from easellet_plugin import Plugin  # noqa: E402
 
 ATOM = "{http://www.w3.org/2005/Atom}"
 MAX_FEED = 2 * 1024 * 1024
@@ -16,7 +16,7 @@ MAX_FEED = 2 * 1024 * 1024
 plugin = Plugin.read()
 count = int(plugin.params.get("count", "6"))
 try:
-    request = urllib.request.Request(plugin.params["url"], headers={"User-Agent": "photoframe-bridge"})
+    request = urllib.request.Request(plugin.params["url"], headers={"User-Agent": "easellet-bridge"})
     with urllib.request.urlopen(request, timeout=10) as answer:
         root = ElementTree.fromstring(answer.read(MAX_FEED))
 except Exception as error:  # noqa: BLE001

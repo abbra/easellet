@@ -1,6 +1,6 @@
 // PhotoPainter's native frame format, for the browser and for Node.
 //
-// The frame's own decoder is deliberately strict: a `.pf6` is exactly 192 000
+// The frame's own decoder is deliberately strict: a `.el6` is exactly 192 000
 // bytes of 4bpp indices and nothing else. That strictness is what makes the
 // upload path cheap - the panel never has to trust a phone's JPEG, its EXIF
 // orientation, or a 12-megapixel allocation it cannot afford. The browser does
@@ -9,7 +9,7 @@
 //
 // This module is the browser-side half of `tools/convert.py`, and the two must
 // agree byte for byte: same resize, same Floyd-Steinberg diffusion, same
-// 180-degree native layout. `tools/check-pf6-js.py` proves that by feeding both
+// 180-degree native layout. `tools/check-el6-js.py` proves that by feeding both
 // the same 800x480 RGB and comparing hashes.
 //
 // Pure: no canvas, no DOM, no Node APIs. `pack` takes plain RGBA bytes, so the

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
-from photoframe_plugin import Plugin  # noqa: E402
+from easellet_plugin import Plugin  # noqa: E402
 
 SUFFIXES = {".jpg", ".jpeg", ".png"}
 

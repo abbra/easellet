@@ -48,8 +48,8 @@ use zerocopy::{FromBytes, IntoBytes};
 pub const PORT: u16 = wire::LAN_TCP_PORT;
 
 /// Card-relative file holding the names packet a client wrote: the raw
-/// 288-byte `DataExtended`. Under `PFTEST`, the one directory the firmware writes.
-pub const NAMES_FILE: &str = "PFTEST/OPENDISP.BIN";
+/// 288-byte `DataExtended`. Under `EASELTEST`, the one directory the firmware writes.
+pub const NAMES_FILE: &str = "EASELTEST/OPENDISP.BIN";
 
 /// Accept-loop tick while nobody is connected.
 const TICK: Duration = Duration::from_millis(25);

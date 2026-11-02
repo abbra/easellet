@@ -1,6 +1,6 @@
 //! The bridge's settings: `bridge.toml`, the environment, the command line.
 //!
-//! Precedence, lowest first: built-in defaults, the file, `PF_*` variables, flags.
+//! Precedence, lowest first: built-in defaults, the file, `EASEL_*` variables, flags.
 //! A value that came from a flag or a variable wins for this run and is shown as
 //! read-only in the web UI, because editing it there would be undone at the next
 //! restart. Everything else can be changed from the UI and is written back to the
@@ -34,12 +34,12 @@ pub struct Settings {
     pub tts: String,
     /// Stems a voice-triggered transcript must contain; empty = all addressed.
     pub wake: Vec<String>,
-    /// System prompt for the model command (`PF_LLM_SYSTEM`); empty = its default.
+    /// System prompt for the model command (`EASEL_LLM_SYSTEM`); empty = its default.
     pub llm_system: String,
     /// Text the recogniser treats as just heard: the wake word and names it
     /// should expect ("Рамка, покажи погоду в Эспоо"). Whisper only; empty = none.
     pub stt_prompt: String,
-    /// Chat-completions URL for the model command (`PF_LLM_URL`); empty = its default.
+    /// Chat-completions URL for the model command (`EASEL_LLM_URL`); empty = its default.
     pub llm_url: String,
     /// Password for the web UI (HTTP Basic, any user name); empty = open.
     pub ui_password: String,
@@ -123,9 +123,9 @@ impl Settings {
     pub fn save(&self, path: &Path) -> Result<(), String> {
         let text = toml::to_string_pretty(self).map_err(|error| error.to_string())?;
         let text = format!(
-            "# photoframe-bridge settings; edited by the web UI as well.\n\
+            "# easellet-bridge settings; edited by the web UI as well.\n\
              # Keys: addr, token, stt, llm, tts, wake, llm_system, stt_prompt, llm_url,\n\
-             # ui_password, ui_hosts. Flags and PF_* variables override this file.\n\n{text}"
+             # ui_password, ui_hosts. Flags and EASEL_* variables override this file.\n\n{text}"
         );
         if let Some(directory) = path.parent() {
             std::fs::create_dir_all(directory)
@@ -139,10 +139,10 @@ impl Settings {
     pub fn live(&self) -> Live {
         let mut llm_env = Vec::new();
         if !self.llm_system.is_empty() {
-            llm_env.push(("PF_LLM_SYSTEM".to_owned(), self.llm_system.clone()));
+            llm_env.push(("EASEL_LLM_SYSTEM".to_owned(), self.llm_system.clone()));
         }
         if !self.llm_url.is_empty() {
-            llm_env.push(("PF_LLM_URL".to_owned(), self.llm_url.clone()));
+            llm_env.push(("EASEL_LLM_URL".to_owned(), self.llm_url.clone()));
         }
         Live {
             token: Some(self.token.clone()).filter(|token| !token.is_empty()),
@@ -368,13 +368,13 @@ pub fn normalize_wake(stems: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The default settings file: `$XDG_CONFIG_HOME/photoframe-bridge/bridge.toml`.
+/// The default settings file: `$XDG_CONFIG_HOME/easellet-bridge/bridge.toml`.
 pub fn default_path() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("photoframe-bridge").join("bridge.toml")
+    base.join("easellet-bridge").join("bridge.toml")
 }
 
 #[cfg(unix)]
@@ -421,9 +421,9 @@ mod tests {
     #[test]
     fn secrets_never_reach_the_browser() {
         let mut settings = Settings::default();
-        settings.token = "photoframe-lan".to_owned();
+        settings.token = "easellet-lan".to_owned();
         let json = settings.to_json(&pinned(&[])).to_string();
-        assert!(!json.contains("photoframe-lan"), "{json}");
+        assert!(!json.contains("easellet-lan"), "{json}");
         assert!(json.contains("\"token\":true"), "{json}");
         assert!(json.contains("\"ui_password\":false"), "{json}");
     }
@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(settings.live().wake, ["рамк", "frame"]);
         assert_eq!(
             settings.live().llm_env,
-            [("PF_LLM_SYSTEM".to_owned(), "Коротко.".to_owned())]
+            [("EASEL_LLM_SYSTEM".to_owned(), "Коротко.".to_owned())]
         );
         // Pinned by a flag: refused, nothing changes.
         assert!(

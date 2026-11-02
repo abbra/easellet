@@ -1,5 +1,5 @@
 #!/bin/sh
-# Photoframe bridge TTS backend: Piper in the language of the answer, converted to the
+# Easellet bridge TTS backend: Piper in the language of the answer, converted to the
 # exact format the firmware expects — raw signed 16-bit little-endian mono PCM at
 # 16 kHz on stdout, text read from stdin.
 #
@@ -38,14 +38,14 @@
 # failing, because a stored setting from before this voice existed should not silence
 # the frame.
 #
-# Overrides: PF_PIPER_MODEL (forces one model), PF_PIPER_LENGTH (piper
-# `--length-scale`, default 1.0 — larger is slower), PF_PIPER_VOLUME (`--volume`,
+# Overrides: EASEL_PIPER_MODEL (forces one model), EASEL_PIPER_LENGTH (piper
+# `--length-scale`, default 1.0 — larger is slower), EASEL_PIPER_VOLUME (`--volume`,
 # default 0.85).
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
-piper="${PF_PIPER:-$HOME/.local/bin/piper}"
-voices="${PF_PIPER_VOICES:-$HOME/.local/share/piper-voices}"
+piper="${EASEL_PIPER:-$HOME/.local/bin/piper}"
+voices="${EASEL_PIPER_VOICES:-$HOME/.local/share/piper-voices}"
 requested="${VOICES:-}"
 
 text=$(cat)
@@ -73,8 +73,8 @@ if [ -n "$requested" ] && [ -f "$voices/$requested.onnx" ]; then
     model="$voices/$requested.onnx"
 elif [ -n "$requested" ] && [ -f "$requested" ]; then
     model="$requested"
-elif [ -n "${PF_PIPER_MODEL:-}" ]; then
-    model="$PF_PIPER_MODEL"
+elif [ -n "${EASEL_PIPER_MODEL:-}" ]; then
+    model="$EASEL_PIPER_MODEL"
 else
     case "$lang" in
         en) model="$voices/en_US-amy-medium.onnx" ;;
@@ -98,8 +98,8 @@ echo "tts-piper: lang=$lang hint=${hint:-<none>} detected=$detected voice=${requ
 # Piper writes 16-bit mono samples, which is the same sample format on both sides.
 printf '%s' "$text" |
     "$piper" --model "$model" \
-        --length-scale "${PF_PIPER_LENGTH:-1.0}" \
-        --volume "${PF_PIPER_VOLUME:-0.85}" \
+        --length-scale "${EASEL_PIPER_LENGTH:-1.0}" \
+        --volume "${EASEL_PIPER_VOLUME:-0.85}" \
         --output-raw 2>/dev/null |
     ffmpeg -nostdin -loglevel error -f s16le -ar 22050 -ac 1 -i pipe:0 \
         -ar 16000 -ac 1 -f s16le pipe:1

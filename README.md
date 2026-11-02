@@ -29,7 +29,7 @@ still appeared upside down, so both axes are now flipped (native 180-degree
 rotation). User confirmed the corrected bar order (black, yellow, red, blue, green,
 white) and the vendor image. The audio stage now exercises ES8311 playback and
 ES7210 capture at 24 kHz/16-bit stereo: `audio level`, `audio tone`, `audio rec`
-(writes `/sdcard/PFTEST/REC.WAV`) and `audio play <file.wav>` all answer, and the
+(writes `/sdcard/EASELTEST/REC.WAV`) and `audio play <file.wav>` all answer, and the
 SD test directory was written with user approval. Playback and capture both use the
 one full-duplex I2S port, so both directions are enabled together: ESP-IDF makes the
 later-initialized TX channel the clock consumer, and TX alone never drains. Remaining
@@ -60,8 +60,8 @@ Template reference: esp-rs/esp-idf-template commit
 
 Outputs under `target/xtensa-esp32s3-espidf/debug/`:
 
-- `photoframe`: ELF with debugging symbols
-- `photoframe.bin`: application image (not a full flash image)
+- `easellet`: ELF with debugging symbols
+- `easellet.bin`: application image (not a full flash image)
 - `bootloader.bin` and `partition-table.bin`: IDF-generated boot layout
 
 The check script runs formatting, native parser/decoder/framebuffer/image-loader tests, cross-target Clippy,
@@ -86,7 +86,7 @@ by LF or CRLF, one at a time. No banner is emitted; start with `help`.
 | `sd ls [<dir>]` | Bounded read-only listing of a directory below `/sdcard`, or of its root |
 | `display bars` | Six vertical color bars, left to right black, yellow, red, blue, green, white |
 | `display bmp <file>` | Load an uncompressed 800x480 24-bit BMP from `/sdcard`, map to the six colors, refresh |
-| `display raw <file>` | Load an exact 192000-byte host-converted `.pf6` frame from `/sdcard`, refresh |
+| `display raw <file>` | Load an exact 192000-byte host-converted `.el6` frame from `/sdcard`, refresh |
 | `display clear <color>` | Fill the panel with one of those six colors |
 | `display sleep` | Panel deep sleep; the next draw re-runs init |
 | `display status` | Awake flag and BUSY pin state |
@@ -95,7 +95,7 @@ by LF or CRLF, one at a time. No banner is emitted; start with `help`.
 | `audio tone [ms]` | 440 Hz stereo tone through the speaker, 100..2000 ms |
 | `audio loop [ms]` | Play the tone and capture it at once, reporting capture statistics |
 | `audio level <ms>` | Capture and report rms/peak/correlation, 100..5000 ms |
-| `audio rec <1..10>` | Double beep cue, then record to `/sdcard/PFTEST/REC.WAV` |
+| `audio rec <1..10>` | Double beep cue, then record to `/sdcard/EASELTEST/REC.WAV` |
 | `audio hex` | First and last captured frames as hex pairs |
 | `audio play <file>` | Play a 24 kHz/16-bit/stereo WAV from `/sdcard` |
 | `audio volume <db>` | ES8311 DAC volume, -24..+12 dB, applied live |
@@ -108,7 +108,7 @@ by LF or CRLF, one at a time. No banner is emitted; start with `help`.
 | `wifi off` | Disconnect and power the radio down |
 | `wifi auto on` / `wifi auto off` | Set the boot-join flag; takes effect at the next boot, and `config save` makes it survive a power cycle |
 | `config` | Effective settings, their source, and the file path |
-| `config save` | Write `/sdcard/PFTEST/CONFIG.TXT`, passphrase included |
+| `config save` | Write `/sdcard/EASELTEST/CONFIG.TXT`, passphrase included |
 | `ai status` | Resolved assistant endpoints, language, voice and model; token redacted |
 | `ai selftest` | Build every assistant request from the settings without sending anything |
 | `ai stt [ms]` | Capture, µ-law, POST to `/stt`, print the transcript |
@@ -117,7 +117,7 @@ by LF or CRLF, one at a time. No banner is emitted; start with `help`.
 | `ai idle off\|key\|voice` | What may start a turn with nobody typing; `config save` persists |
 | `ai threshold <20..4000>` | Loudness gate for the voice watcher, in 16-bit sample units |
 | `gallery status` | Slideshow state: directory, image count, next picture, interval, counts |
-| `gallery start [<dir> [<secs>]]` | Start or restart the slideshow over the `.bmp`/`.pf6` files in one directory |
+| `gallery start [<dir> [<secs>]]` | Start or restart the slideshow over the `.bmp`/`.el6` files in one directory |
 | `gallery next` | Draw the next picture now, without waiting for the interval |
 | `gallery stop` | Stop advancing; the panel keeps what it shows |
 
@@ -215,11 +215,11 @@ sleeps, waking only on a button. `info` shows `wake=cold|timer|boot|key|pwr` and
 the wake count since power-on.
 
 The USB console disappears while the chip sleeps and the port is created again
-on every wake. `tools/udev/70-photoframe-esp32s3.rules` gives the logged-in user
+on every wake. `tools/udev/70-easellet-esp32s3.rules` gives the logged-in user
 access each time:
 
 ```bash
-sudo install -m 0644 tools/udev/70-photoframe-esp32s3.rules /etc/udev/rules.d/
+sudo install -m 0644 tools/udev/70-easellet-esp32s3.rules /etc/udev/rules.d/
 sudo udevadm control --reload
 ```
 
@@ -228,7 +228,7 @@ sudo udevadm control --reload
 There is no key/value store: NVS is never initialized, the radio runs with flash
 storage disabled, and the USB-Serial/JTAG peripheral resets the chip whenever a
 host opens the port, so RAM settings cannot survive between sessions. The only
-durable place is the card, at `/sdcard/PFTEST/CONFIG.TXT` — an 8.3 name because
+durable place is the card, at `/sdcard/EASELTEST/CONFIG.TXT` — an 8.3 name because
 FATFS is built with `CONFIG_FATFS_LFN_NONE`.
 
 ```
@@ -266,14 +266,14 @@ serve, and boot continues normally.
 
 `config save` writes the file from live state, so `audio volume -6` followed by
 `config save` survives a reboot; the values reported by `audio status` are the ones
-persisted. Nothing is written at boot, and only this one file under `PFTEST` is
+persisted. Nothing is written at boot, and only this one file under `EASELTEST` is
 ever created.
 
 ## Host helpers
 
 ```bash
-.venv-tools/bin/python tools/convert.py input.png ~/tmp/frame/frame.pf6
-python tools/convert.py --no-dither input.png ~/tmp/frame/frame.pf6   # image -> .pf6
+.venv-tools/bin/python tools/convert.py input.png ~/tmp/frame/frame.el6
+python tools/convert.py --no-dither input.png ~/tmp/frame/frame.el6   # image -> .el6
 .venv-tools/bin/python tools/pfjoin.py                            # join Wi-Fi, save it
 .venv-tools/bin/python tools/pfconsole.py "info" "audio status"    # one-shot commands
 ```
@@ -306,7 +306,7 @@ for speech.
 
 Plugins (`bridge/plugins/README.md`) produce cards or pictures; the Plugins tab
 previews them and saves them as **jobs**: a plugin, its parameters, the frames,
-an interval and a priority, kept in `~/.config/photoframe-bridge/jobs.toml`
+an interval and a priority, kept in `~/.config/easellet-bridge/jobs.toml`
 (owner-only; secret parameters are write-only from the UI). The scheduler runs
 due jobs every half minute, keeps the latest picture per frame, pushes it to
 frames that are awake, and leaves it for sleeping frames to fetch on their timed
@@ -353,8 +353,8 @@ longer heard as English "Ram"; a clear sentence in another language still wins.
 Whisper treats as just heard: put the wake word and the names you say in it
 («Рамка, покажи погоду в Эспоо.»), and «в Эспоо» stops coming out as «ВСПУ».
 Replayed against 30 earlier captures of room noise and chatter it caused no
-echo of itself. `build.sh transcribe small auto file.wav…` with `PF_STT_HINT`
-and `PF_STT_PROMPT` replays captures the same way.
+echo of itself. `build.sh transcribe small auto file.wav…` with `EASEL_STT_HINT`
+and `EASEL_STT_PROMPT` replays captures the same way.
 
 ### Web UI and settings
 
@@ -363,16 +363,16 @@ frames asked and were answered (rejections included, with the reason and the
 timings), and the bridge's settings. Frames, plugins and pictures from the bridge
 follow (`research/bridge-ui-design.md`, TODO P8).
 
-Settings live in `~/.config/photoframe-bridge/bridge.toml` (`--config` to move
+Settings live in `~/.config/easellet-bridge/bridge.toml` (`--config` to move
 it), owner-only because it holds the frames' token and the UI password. The first
 `serve-local.sh` run creates it from the script's defaults; after that the file and
-the UI are what count, and a flag or `PF_*` variable given explicitly wins for that
+the UI are what count, and a flag or `EASEL_*` variable given explicitly wins for that
 run and shows as read-only in the UI. The wake stems, the token, the model's system
 prompt and URL, the UI password and extra host names apply at once; the listen
 address and the three backends after a restart.
 
 The UI is protected like the frame's portal: an optional password
-(`ui_password`, HTTP Basic), an `X-Photoframe` header on every POST, and a `Host`
+(`ui_password`, HTTP Basic), an `X-Easellet` header on every POST, and a `Host`
 check (IP addresses, local names, this machine's own name, `ui_hosts`). The
 frames' endpoints keep their bearer token; the two never share credentials.
 
@@ -400,11 +400,11 @@ Then point the frame at the bridge. Either type it at the console and persist it
 
 ```
 ai url http://192.168.50.93:8095    # live at once; `-` clears it
-ai key photoframe-lan-2026         # optional, must match --token; never echoed
-config save                        # writes both to PFTEST/CONFIG.TXT
+ai key easellet-lan-2026         # optional, must match --token; never echoed
+config save                        # writes both to EASELTEST/CONFIG.TXT
 ```
 
-or put the same two lines in `PFTEST/CONFIG.TXT` with the card out of the device:
+or put the same two lines in `EASELTEST/CONFIG.TXT` with the card out of the device:
 
 ```
 ai.url=http://192.168.50.93:8095
@@ -473,7 +473,7 @@ them again. A voice turn is spoken to only after the microphone has been closed,
 the frame cannot transcribe its own answer.
 
 A gate is not enough on its own, and the bridge supplies the missing half: `--wake`
-(or `PF_WAKE`) names the stems a transcript must contain before it is answered —
+(or `EASEL_WAKE`) names the stems a transcript must contain before it is answered —
 `рамк,фоторам,frame` covers «рамка», «рамку» and the English name. Without it, a
 house where people simply talk starts a capture every half minute, Whisper invents a
 sentence from the noise or reads the conversation correctly, and the frame answers
@@ -512,8 +512,8 @@ tools/mkfont.py > src/font.rs
 
 ## Slideshow
 
-`gallery start` walks the `.bmp` and `.pf6` files in one directory, sorted, and
-refreshes the panel every interval. The default directory is `PFTEST` and the
+`gallery start` walks the `.bmp` and `.el6` files in one directory, sorted, and
+refreshes the panel every interval. The default directory is `EASELTEST` and the
 default interval five minutes; both fall back to `gallery.dir` and `gallery.secs`
 from the settings file, so a bare `gallery start` resumes what the card remembers.
 `gallery next` advances once; `gallery auto` at boot comes from `gallery.auto=1`.
@@ -542,7 +542,7 @@ unreadable file cannot spin the loop; the entry itself is dropped for this round
 a card holding mixed sizes and JPEGs still cycles rather than sticking:
 
 ```
-ERR gallery PFTEST/BROKEN.BMP: ERR image bmp signature
+ERR gallery EASELTEST/BROKEN.BMP: ERR image bmp signature
 ```
 
 That is the normal case, not an edge case: the vendor card's `06_USE~1` holds three
@@ -558,7 +558,7 @@ The frame serves its own page on port 80 as soon as it has a link (`wifi join`,
 ```bash
 web                # OK web listening port=80 locked=0 auth=none route=/
 web status         # same line
-python3 -c "import socket;print(socket.gethostbyname('photoframe'))"   # or `wifi status`
+python3 -c "import socket;print(socket.gethostbyname('easellet'))"   # or `wifi status`
 ```
 
 Nine tenths of the work happens on the device, because the card and the panel
@@ -567,23 +567,23 @@ job, the main loop performs it, and the reply is the HTTP body.
 
 | route | what it does |
 | --- | --- |
-| `GET /` | the page (`web/index.html` + `tools/pf6.mjs`) |
+| `GET /` | the page (`web/index.html` + `tools/el6.mjs`) |
 | `GET /gallery` | the slideshow directory as JSON: `{"dir":…,"images":[{"name","bytes"}]}` |
-| `GET /image?path=…` | one picture decoded to a 192 000-byte frame, BMP or `.pf6` |
-| `POST /upload` | 192 000 bytes in; written to `<gallery.dir>/UPnnnn.PF6`, painted |
+| `GET /image?path=…` | one picture decoded to a 192 000-byte frame, BMP or `.el6` |
+| `POST /upload` | 192 000 bytes in; written to `<gallery.dir>/UPnnnn.EL6`, painted |
 | `POST /show?path=…` | decode an existing picture and start a refresh |
 | `POST /delete?path=…` | remove one picture, refused outside the writable directory |
 | `GET /settings` | current settings as JSON, secrets reduced to `true`/`false` |
-| `POST /settings` | form fields, applied and written to `PFTEST/CONFIG.TXT` |
+| `POST /settings` | form fields, applied and written to `EASELTEST/CONFIG.TXT` |
 | `GET /sensors` | battery (present, USB, charging, mV, %) and room climate as JSON, read every 30 s |
 | `GET /status` | one line: frame size and the route list |
 
-Every POST must carry an `X-Photoframe` header (any value); without it the
+Every POST must carry an `X-Easellet` header (any value); without it the
 frame answers 403. A page on another site cannot add a custom header without a
 CORS preflight, which the frame never answers, so this is what stops a random
 web page open on the LAN from changing `ai.url` (where audio and `ai.key` go),
 deleting pictures or clearing the password. With curl:
-`curl -H 'X-Photoframe: 1' --data-binary @pic.pf6 http://<frame>/upload`.
+`curl -H 'X-Easellet: 1' --data-binary @pic.el6 http://<frame>/upload`.
 
 The frame also answers only requests whose `Host` is an IPv4 address or a
 local name (no dot, or ending in `.local`, `.lan`, `.home`, `.home.arpa`,
@@ -621,14 +621,14 @@ requests would only queue on it.
 **Deleting asks twice**, in place: the first click arms the button («Точно
 удалить 12?», red), the second within five seconds acts. There is no modal,
 because a dialog that interrupts is a dialog everybody dismisses without reading.
-A deletion is refused by the firmware outside `PFTEST` - the vendor's own
+A deletion is refused by the firmware outside `EASELTEST` - the vendor's own
 pictures are readable and permanent - and the page therefore shows them without a
 checkbox and with «не удаляется» instead of a button bound to fail. The policy
 lives in `image::removable`, with tests for `06_USE~1`, `CONFIG.TXT`, `..` and
 backslash tricks.
 
 **Working on the page without the frame.** `tools/portal-mock.py` serves
-`web/index.html` and `tools/pf6.mjs` over a fake API that answers with the same
+`web/index.html` and `tools/el6.mjs` over a fake API that answers with the same
 shapes and status codes as `src/web.rs`, with as many generated pictures as you
 ask for:
 
@@ -638,27 +638,27 @@ tools/portal-mock.py --count 60 --port 8130      # then open http://127.0.0.1:81
 
 It also serves `tools/portal-harness.html`, which drives the real page in a
 same-origin iframe and checks paging, search, the two-click delete, the refusal
-outside `PFTEST`, the tabs and the settings form:
+outside `EASELTEST`, the tabs and the settings form:
 
 ```
-ok список: 62 в PFTEST/UPLOADS        ok после удаления: 52 в PFTEST/UPLOADS
+ok список: 62 в EASELTEST/UPLOADS        ok после удаления: 52 в EASELTEST/UPLOADS
 ok на странице 12 карточек: 12        ok картинка прошивки: ... "не удаляется"
-ok вторая страница ...                ok удаление вне PFTEST: 403 ...
+ok вторая страница ...                ok удаление вне EASELTEST: 403 ...
 ```
 
-**The gallery is shown as the panel draws it.** `pf6.mjs` gained `unpack` and
+**The gallery is shown as the panel draws it.** `el6.mjs` gained `unpack` and
 `drawFrame`, the exact inverse of `pack`: same 180-degree rotation, same nibble
 order, same six colours. Every card in the grid is fetched as a frame and drawn
-through that path, so a `.pf6` written by `tools/convert.py`, one uploaded from
+through that path, so a `.el6` written by `tools/convert.py`, one uploaded from
 the page, and a vendor BMP all appear as they are on the wall. The gate pins the
 round trip: `pack(unpack(frame), {dither: false})` is byte-identical to `frame`,
 which no wrong rotation or nibble order can survive.
 
 Uploads go to the slideshow's own directory (`gallery.dir`, default
-`PFTEST/UPLOADS`, created on first use), so a picture sent from a browser is also
+`EASELTEST/UPLOADS`, created on first use), so a picture sent from a browser is also
 a picture the frame will cycle through - and if the slideshow is running, the new
 file jumps the queue instead of waiting a full lap. Uploads are only written
-inside `PFTEST`: with `gallery.dir` pointed at the vendor's pictures the
+inside `EASELTEST`: with `gallery.dir` pointed at the vendor's pictures the
 slideshow still shows them, but an upload is refused.
 
 **Settings** mirror the console commands and are validated by the same parser:
@@ -670,7 +670,7 @@ An empty field means "leave it alone", which is what an untouched password box
 has to mean.
 
 The answer language is a short list rather than a text box: exactly the four
-languages the bridge's recogniser is allowed to pick (`PF_STT_LANGS=ru,en,fi,fr`
+languages the bridge's recogniser is allowed to pick (`EASEL_STT_LANGS=ru,en,fi,fr`
 in `bridge/src/whisper.rs`), shown in their own scripts — Русский, English, Suomi,
 Français. Offering a language the bridge cannot hear would be a promise the frame
 cannot keep. The frame still answers in the language of the question; this is the
@@ -705,7 +705,7 @@ The form's password box also takes `-` to remove the lock, the same convention
 ## Host image converter
 
 ```bash
-python tools/convert.py input.png ~/tmp/frame/frame.pf6
+python tools/convert.py input.png ~/tmp/frame/frame.el6
 ```
 
 Requires Pillow. The converter crops/fits to 800x480, applies Floyd-Steinberg
@@ -714,9 +714,9 @@ error diffusion against the panel's exact six RGB colors, and writes the native
 without color drift; the source-to-native mapping and 192000-byte size are checked
 offline. No card writes are performed by the firmware or the converter.
 
-## Images: the wire format is `.pf6`, and the browser does the conversion
+## Images: the wire format is `.el6`, and the browser does the conversion
 
-The frame only ever accepts two things: a 24-bit BMP, or a raw `.pf6`
+The frame only ever accepts two things: a 24-bit BMP, or a raw `.el6`
 (192 000 bytes, 4bpp indices, 180-degree native order). It does **not** decode
 JPEG or PNG, and that is a decision rather than a gap:
 
@@ -725,33 +725,33 @@ JPEG or PNG, and that is a decision rather than a gap:
   megapixel cap and a real chance of failing mid-upload;
 - the six-colour mapping wants error diffusion, which needs the whole picture in
   floating point - another 4.6 MB that belongs on a real machine;
-- a `.pf6` is already in the panel's own encoding, so the upload path has nothing
+- a `.el6` is already in the panel's own encoding, so the upload path has nothing
   to validate beyond its size, and a bad upload cannot half-draw the panel.
 
-So `tools/pf6.mjs` does resize, Floyd-Steinberg and packing in the browser, where
+So `tools/el6.mjs` does resize, Floyd-Steinberg and packing in the browser, where
 a canvas and 8 GB of RAM already exist, and the page posts 192 KB instead of
 megabytes:
 
 ```js
-import { packImage } from "./pf6.mjs";
+import { packImage } from "./el6.mjs";
 
 const canvas = document.createElement("canvas");
 canvas.width = 800; canvas.height = 480;
 const context = canvas.getContext("2d", { willReadFrequently: true });
 const frame = packImage(imageElement, context, { mode: "cover" }); // 192000 bytes
-await fetch("/upload", { method: "POST", headers: { "X-Photoframe": "1" }, body: frame });
+await fetch("/upload", { method: "POST", headers: { "X-Easellet": "1" }, body: frame });
 ```
 
 `mode: "cover"` fills the panel and centre-crops (what `tools/convert.py` does);
 `mode: "contain"` fits the whole picture and letterboxes in white.
 
 The two converters must not drift, so the gate compares them: same 800×480 RGB
-in, byte-identical `.pf6` out, in both dithered and nearest-colour modes, on a
+in, byte-identical `.el6` out, in both dithered and nearest-colour modes, on a
 gradient, seeded noise, exact palette blocks, a 64×64 upscale and any photos
 passed in:
 
 ```bash
-python3 tools/check-pf6-js.py ~/Downloads/*.jpg
+python3 tools/check-el6-js.py ~/Downloads/*.jpg
 #   ok   img20261031123204 dither 192000 bytes sha256:563c091aab7002fd
 # OK 6 images, both modes, byte-identical
 ```

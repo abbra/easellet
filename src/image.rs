@@ -27,7 +27,7 @@ const BMP_ROW_BYTES: usize = panel::WIDTH * 3;
 /// The one place on the card the firmware writes to, and therefore the only
 /// place a host may ask it to delete from. Everything else is the vendor's own
 /// data and is read-only from the portal.
-pub const WRITABLE_DIR: &str = "PFTEST";
+pub const WRITABLE_DIR: &str = "EASELTEST";
 
 /// The file a delete request names, if the request may act on it.
 ///
@@ -37,9 +37,9 @@ pub const WRITABLE_DIR: &str = "PFTEST";
 /// readable and not removable, which is the whole point of the distinction.
 pub fn removable(relative: &str) -> Result<PathBuf, String> {
     let lower = relative.to_ascii_lowercase();
-    if !(lower.ends_with(".pf6") || lower.ends_with(".bmp")) {
+    if !(lower.ends_with(".el6") || lower.ends_with(".bmp")) {
         return Err(format!(
-            "ERR {relative}: only .pf6 and .bmp pictures can be removed\r\n"
+            "ERR {relative}: only .el6 and .bmp pictures can be removed\r\n"
         ));
     }
     let path = resolve(relative)?;
@@ -91,14 +91,14 @@ pub fn load_raw(path: &Path, buffer: &mut [u8]) -> Result<(), String> {
 /// Load either format, choosing the loader by extension.
 ///
 /// The slideshow lists both kinds from one directory, so it cannot ask the user
-/// which loader to use; `.pf6` is the converter's exact 4bpp output and anything
+/// which loader to use; `.el6` is the converter's exact 4bpp output and anything
 /// else is treated as a BMP, which is what `display bmp` already does.
 pub fn load_any(relative: &str, buffer: &mut [u8]) -> Result<(), String> {
     let path = resolve(relative)?;
     let raw = path
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("pf6"));
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("el6"));
     if raw {
         load_raw(&path, buffer)
     } else {
@@ -213,13 +213,13 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn only_pftest_and_below_is_writable() {
-        assert!(is_writable_dir("PFTEST"));
-        assert!(is_writable_dir("pftest/UPLOADS"));
-        assert!(!is_writable_dir("PFTESTX"));
+    fn only_easeltest_and_below_is_writable() {
+        assert!(is_writable_dir("EASELTEST"));
+        assert!(is_writable_dir("easeltest/UPLOADS"));
+        assert!(!is_writable_dir("EASELTESTX"));
         assert!(!is_writable_dir("PICTURES"));
-        assert!(!is_writable_dir("PFTEST/../PICTURES"));
-        assert!(!is_writable_dir("/PFTEST"));
+        assert!(!is_writable_dir("EASELTEST/../PICTURES"));
+        assert!(!is_writable_dir("/EASELTEST"));
         assert!(!is_writable_dir(""));
     }
 
@@ -302,11 +302,11 @@ mod tests {
 
     #[test]
     fn removal_stays_inside_the_writable_directory() {
-        assert!(removable("PFTEST/UPLOADS/UP0001.PF6").is_ok());
-        assert!(removable("PFTEST/A.BMP").is_ok());
+        assert!(removable("EASELTEST/UPLOADS/UP0001.EL6").is_ok());
+        assert!(removable("EASELTEST/A.BMP").is_ok());
         assert_eq!(
-            removable("PFTEST/UPLOADS/UP0001.PF6").unwrap(),
-            Path::new("/sdcard/PFTEST/UPLOADS/UP0001.PF6")
+            removable("EASELTEST/UPLOADS/UP0001.EL6").unwrap(),
+            Path::new("/sdcard/EASELTEST/UPLOADS/UP0001.EL6")
         );
     }
 
@@ -320,16 +320,16 @@ mod tests {
     #[test]
     fn removal_refuses_what_is_not_a_picture() {
         // `config save` writes this file; a delete request must not reach it.
-        assert!(removable("PFTEST/CONFIG.TXT").is_err());
-        assert!(removable("PFTEST/REC.WAV").is_err());
-        assert!(removable("PFTEST/UPLOADS/UP0001.PF6/../CONFIG.TXT").is_err());
+        assert!(removable("EASELTEST/CONFIG.TXT").is_err());
+        assert!(removable("EASELTEST/REC.WAV").is_err());
+        assert!(removable("EASELTEST/UPLOADS/UP0001.EL6/../CONFIG.TXT").is_err());
     }
 
     #[test]
     fn removal_refuses_to_climb_out() {
-        assert!(removable("../PFTEST/UP0001.PF6").is_err());
-        assert!(removable("/PFTEST/UP0001.PF6").is_err());
-        assert!(removable("PFTEST\\..\\UP0001.PF6").is_err());
-        assert!(removable("PFTESTFUPLOADS/UP0001.PF6").is_err());
+        assert!(removable("../EASELTEST/UP0001.EL6").is_err());
+        assert!(removable("/EASELTEST/UP0001.EL6").is_err());
+        assert!(removable("EASELTEST\\..\\UP0001.EL6").is_err());
+        assert!(removable("EASELTESTFUPLOADS/UP0001.EL6").is_err());
     }
 }

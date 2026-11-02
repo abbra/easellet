@@ -168,7 +168,7 @@ impl Scheduler {
     fn save(&self, jobs: &JobFile) -> Result<(), String> {
         let text = toml::to_string_pretty(jobs).map_err(|error| error.to_string())?;
         let text = format!(
-            "# photoframe-bridge jobs; edited by the web UI. Owner-only: may hold secrets.\n\n{text}"
+            "# easellet-bridge jobs; edited by the web UI. Owner-only: may hold secrets.\n\n{text}"
         );
         if let Some(directory) = self.path.parent() {
             std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;

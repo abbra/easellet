@@ -372,7 +372,7 @@ pub fn run(
             std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),
         )
         .env("LANG", "C.UTF-8")
-        .env("PF_PLUGIN_SCRATCH", &scratch.path)
+        .env("EASEL_PLUGIN_SCRATCH", &scratch.path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -577,7 +577,7 @@ impl Scratch {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
-            "photoframe-bridge-{}-{name}-{}",
+            "easellet-bridge-{}-{name}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));

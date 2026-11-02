@@ -38,12 +38,12 @@ fn init_logging() {
     });
 }
 
-/// Languages auto-detection may pick, from `PF_STT_LANGS`.
+/// Languages auto-detection may pick, from `EASEL_STT_LANGS`.
 ///
 /// Comma-separated two-letter codes. The default is the household's own set; an
 /// empty value restores Whisper's unrestricted behaviour.
 fn supported_languages() -> Vec<String> {
-    let spec = std::env::var("PF_STT_LANGS").unwrap_or_else(|_| "ru,en,fi,fr".to_owned());
+    let spec = std::env::var("EASEL_STT_LANGS").unwrap_or_else(|_| "ru,en,fi,fr".to_owned());
     spec.split(',')
         .map(str::trim)
         .filter(|code| code.len() == 2)
@@ -92,7 +92,7 @@ impl WhisperStt {
                     // transcription on that choice and produces invented prose in it,
                     // which the answer follows. Naming the four languages this
                     // household speaks removes that class of nonsense;
-                    // `PF_STT_LANGS` overrides it for a different house.
+                    // `EASEL_STT_LANGS` overrides it for a different house.
                     .with_language_filter(supported_languages())
                     .build()
                     .await

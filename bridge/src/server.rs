@@ -107,7 +107,7 @@ pub struct Bridge {
     /// here and the frame never speaks.
     ///
     /// Empty means "everything is addressed", which is what a bare
-    /// `photoframe-bridge` without `PF_WAKE` does. Stems rather than whole
+    /// `easellet-bridge` without `EASEL_WAKE` does. Stems rather than whole
     /// words, because Russian inflects: `рамк` covers «рамка», «рамку», «рамке».
     pub wake: Vec<String>,
     /// When the frame was last called by name on its own, if recently.
@@ -398,10 +398,10 @@ impl Bridge {
                 if body.is_empty() {
                     return Response::text(400, "ERR empty utterance\n");
                 }
-                // `PF_BRIDGE_DUMP=<dir>` keeps the exact audio the device sent.
+                // `EASEL_BRIDGE_DUMP=<dir>` keeps the exact audio the device sent.
                 // Without it there is no way to tell a failing microphone from a
                 // failing recogniser: the response only ever says "heard nothing".
-                if let Some(directory) = std::env::var_os("PF_BRIDGE_DUMP") {
+                if let Some(directory) = std::env::var_os("EASEL_BRIDGE_DUMP") {
                     let stamp = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|elapsed| elapsed.as_millis())

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send console commands to the photoframe USB serial port and print replies."""
+"""Send console commands to the easellet USB serial port and print replies."""
 import sys
 import time
 

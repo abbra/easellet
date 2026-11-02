@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """A stand-in for the frame's HTTP portal, for working on the page without the board.
 
-The page is served from `web/index.html` and the converter from `tools/pf6.mjs`,
+The page is served from `web/index.html` and the converter from `tools/el6.mjs`,
 so the browser runs exactly the files the firmware would embed; only the API is
 faked. Every route answers with the same shape and the same status codes as
-`src/web.rs`, including the refusal to delete anything outside `PFTEST`, so a
+`src/web.rs`, including the refusal to delete anything outside `EASELTEST`, so a
 page that works here works on the frame.
 
     tools/portal-mock.py --count 60 --port 8130
@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from convert import HEIGHT, PALETTE, WIDTH, frame_from_rgb  # noqa: E402
 
 FRAME_BYTES = WIDTH * HEIGHT // 2
-WRITABLE = "PFTEST"
+WRITABLE = "EASELTEST"
 
 
 def synthetic(index: int, total: int) -> bytes:
@@ -56,7 +56,7 @@ class State:
         self.total = count
         self.uploaded: dict[str, bytes] = {}
         self.ground: dict[str, bytes] = {}
-        self.names = [f"{self.directory}/GEN{index:04}.PF6" for index in range(count)]
+        self.names = [f"{self.directory}/GEN{index:04}.EL6" for index in range(count)]
         # Two pictures from the vendor's own directories: readable, and the page
         # must not offer to delete them, because the firmware would refuse.
         self.vendor = ["01_SYS~1/00_INIT.BMP", "06_USE~1/800X480.BMP"]
@@ -181,13 +181,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.binary(
                 200, (ROOT / "tools/portal-harness.html").read_bytes(), "text/html; charset=utf-8"
             )
-        if route == "/pf6.mjs":
-            return self.binary(200, (ROOT / "tools/pf6.mjs").read_bytes(), "text/javascript; charset=utf-8")
+        if route == "/el6.mjs":
+            return self.binary(200, (ROOT / "tools/el6.mjs").read_bytes(), "text/javascript; charset=utf-8")
         if route == "/status":
             return self.body(
                 200,
-                f"OK photoframe-upload frame_bytes={FRAME_BYTES} "
-                "routes=/ /pf6.mjs /gallery /image /upload /show /delete /settings /status\n",
+                f"OK easellet-upload frame_bytes={FRAME_BYTES} "
+                "routes=/ /el6.mjs /gallery /image /upload /show /delete /settings /status\n",
             )
         if route == "/gallery":
             return self.body(
@@ -230,13 +230,13 @@ class Handler(BaseHTTPRequestHandler):
         payload = self.rfile.read(length) if length else b""
         # Same rule as the firmware: a POST without the portal's header may come
         # from another site's page, and is refused.
-        if self.headers.get("X-Photoframe") is None:
-            return self.body(403, "ERR POST needs the X-Photoframe header the portal page sends\n")
+        if self.headers.get("X-Easellet") is None:
+            return self.body(403, "ERR POST needs the X-Easellet header the portal page sends\n")
 
         if route == "/upload":
             if length != FRAME_BYTES:
                 return self.body(413, f"ERR need exactly {FRAME_BYTES} bytes, got {length}\n")
-            name = f"{self.state.directory}/UP{self.state.next_upload:04}.PF6"
+            name = f"{self.state.directory}/UP{self.state.next_upload:04}.EL6"
             self.state.next_upload += 1
             self.state.uploaded[name] = payload
             return self.body(
@@ -264,8 +264,8 @@ class Handler(BaseHTTPRequestHandler):
     def delete(self, path: str) -> None:
         # The same two rules as the firmware: only the two picture formats, and
         # only inside the writable directory.
-        if not path.lower().endswith((".pf6", ".bmp")):
-            return self.body(403, f"ERR {path}: only .pf6 and .bmp pictures can be removed\n")
+        if not path.lower().endswith((".el6", ".bmp")):
+            return self.body(403, f"ERR {path}: only .el6 and .bmp pictures can be removed\n")
         if not path.lower().startswith(f"{WRITABLE.lower()}/"):
             return self.body(
                 403,

@@ -1,9 +1,9 @@
-"""Helpers for photoframe-bridge plugins written in Python.
+"""Helpers for easellet-bridge plugins written in Python.
 
 A plugin reads one JSON document on stdin and writes one on stdout. This module
 does both and gives the output types names, so a plugin is a few lines:
 
-    from photoframe_plugin import Plugin
+    from easellet_plugin import Plugin
 
     plugin = Plugin.read()
     plugin.notice("Привет", f"Привет, {plugin.params['name']}!")

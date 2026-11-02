@@ -1,12 +1,12 @@
 [package]
-name = "photoframe"
+name = "easellet"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 license = "GPL-3.0-or-later"
 
 [[bin]]
-name = "photoframe"
+name = "easellet"
 path = "src/main.rs"
 test = false
 bench = false

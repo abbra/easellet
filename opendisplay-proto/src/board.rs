@@ -28,7 +28,7 @@ pub fn default_names() -> DataExtended {
     let mut names = DataExtended::new_zeroed();
     set_text(&mut names.manufacturer_name, "Waveshare");
     set_text(&mut names.model_name, "ESP32-S3-PhotoPainter");
-    set_text(&mut names.friendly_name, "photoframe");
+    set_text(&mut names.friendly_name, "easellet");
     names
 }
 

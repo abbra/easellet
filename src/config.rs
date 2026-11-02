@@ -14,9 +14,9 @@
 //! `CONFIG_FATFS_LFN_NONE`, so long names do not exist on this volume.
 
 /// Directory the firmware is allowed to write; shared with the audio test files.
-pub const DIR: &str = "PFTEST";
+pub const DIR: &str = "EASELTEST";
 /// Path below `/sdcard`. 8.3 uppercase: long filenames are compiled out of FATFS.
-pub const FILE: &str = "PFTEST/CONFIG.TXT";
+pub const FILE: &str = "EASELTEST/CONFIG.TXT";
 /// Refuse anything larger: a settings file should never need to be big, and a
 /// bounded read keeps a corrupt card from exhausting the heap. 4 KB leaves room
 /// for the rendered header plus every key at its longest; 1 KB stopped fitting
@@ -461,7 +461,7 @@ impl Settings {
     /// retyping it after every reboot.
     pub fn render(&self) -> String {
         let mut text = String::from(
-            "# photoframe settings; one key=value per line, '#' starts a comment.\n\
+            "# easellet settings; one key=value per line, '#' starts a comment.\n\
              # 8.3 name: FATFS is built without long filename support.\n\
              # keys: wifi.auto (1 = join at boot and stay online), wifi.ssid,\n\
              #       wifi.password, audio.volume_db (-24.0..12.0),\n\
@@ -978,16 +978,16 @@ mod tests {
         assert!(settings.set_web_password("short").is_err());
         assert!(settings.set_web_password("has space").is_err());
         assert!(settings.set_web_password(&"x".repeat(65)).is_err());
-        assert!(settings.set_web_password("photoframe-lan").is_ok());
+        assert!(settings.set_web_password("easellet-lan").is_ok());
         let rendered = settings.render();
         assert!(
             rendered
                 .lines()
-                .any(|line| line == "web.password=photoframe-lan")
+                .any(|line| line == "web.password=easellet-lan")
         );
         assert_eq!(
             Settings::parse(&rendered).expect("valid").web_password(),
-            Some("photoframe-lan")
+            Some("easellet-lan")
         );
         // Empty clears it: the portal's own form must be able to unlock the page.
         assert!(settings.set_web_password("").is_ok());
@@ -1350,15 +1350,15 @@ mod tests {
     fn live_bridge_key_is_bounded_and_never_echoed() {
         let mut settings = Settings::default();
         let reply = settings
-            .set_ai_key("photoframe-lan-2026")
+            .set_ai_key("easellet-lan-2026")
             .expect("19 printable bytes");
-        assert!(!reply.contains("photoframe-lan-2026"), "{reply}");
+        assert!(!reply.contains("easellet-lan-2026"), "{reply}");
         assert!(reply.contains("19 chars"), "{reply}");
-        assert_eq!(settings.bridge_token(), Some("photoframe-lan-2026"));
+        assert_eq!(settings.bridge_token(), Some("easellet-lan-2026"));
         // The same value has to survive a save/load round trip.
         assert_eq!(
             Settings::parse(&settings.render()).unwrap().bridge_token(),
-            Some("photoframe-lan-2026")
+            Some("easellet-lan-2026")
         );
 
         for bad in ["", "short", "has space in it", "tab\there"] {
@@ -1373,7 +1373,7 @@ mod tests {
 
         // `-` is the only way to unset one without editing the card.
         let mut settings = Settings::default();
-        settings.set_ai_key("photoframe-lan-2026").unwrap();
+        settings.set_ai_key("easellet-lan-2026").unwrap();
         assert!(settings.set_ai_key("-").is_ok());
         assert_eq!(settings.ai_key, None);
     }

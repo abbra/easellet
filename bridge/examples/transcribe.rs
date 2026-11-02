@@ -2,8 +2,8 @@
 //!
 //! `cargo run --release --features whisper --example transcribe -- <model> <lang> <file>...`
 //!
-//! `PF_STT_HINT=ru` gives detection the bridge's language head start and
-//! `PF_STT_PROMPT="Рамка, …"` the bridge's prompt, so a capture can be replayed
+//! `EASEL_STT_HINT=ru` gives detection the bridge's language head start and
+//! `EASEL_STT_PROMPT="Рамка, …"` the bridge's prompt, so a capture can be replayed
 //! with and without them.
 //!
 //! Exists to test recognition without the frame: the device's own `/stt` path is a
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Same restriction as the bridge, so a test here reproduces what the
             // frame would have heard rather than a friendlier detector.
             .with_language_filter(
-                std::env::var("PF_STT_LANGS")
+                std::env::var("EASEL_STT_LANGS")
                     .unwrap_or_else(|_| "ru,en,fi,fr".to_owned())
                     .split(',')
                     .map(str::trim)
@@ -66,8 +66,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()
             .await
     })?;
-    model.set_language_hint(std::env::var("PF_STT_HINT").ok().as_deref());
-    model.set_prompt(&std::env::var("PF_STT_PROMPT").unwrap_or_default());
+    model.set_language_hint(std::env::var("EASEL_STT_HINT").ok().as_deref());
+    model.set_prompt(&std::env::var("EASEL_STT_PROMPT").unwrap_or_default());
 
     for path in paths {
         let decoder = rodio::Decoder::new(BufReader::new(File::open(&path)?))?;

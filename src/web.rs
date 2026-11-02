@@ -1,13 +1,13 @@
 //! A small HTTP/1.1 server that accepts pictures from a browser.
 //!
-//! The frame already knows how to draw a raw `.pf6`; what it lacks is a way for
+//! The frame already knows how to draw a raw `.el6`; what it lacks is a way for
 //! a person to put one on the card without removing it. That is all this server
 //! does, and the interesting decisions are about where the work happens:
 //!
 //! - **The browser converts.** `web/index.html` draws the picture into an
 //!   800x480 canvas, runs Floyd-Steinberg against the panel's six colours and
 //!   posts 192 000 bytes. The frame therefore decodes nothing: no JPEG, no PNG,
-//!   no EXIF, no 36 MB RGB buffer for a phone photo. `tools/pf6.mjs` is the same
+//!   no EXIF, no 36 MB RGB buffer for a phone photo. `tools/el6.mjs` is the same
 //!   module the host converter is tested against, and it is served from the file
 //!   the gate checks, not a copy.
 //! - **The card and the panel keep one owner each.** This thread parses HTTP and
@@ -70,7 +70,7 @@ const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Header the portal adds to every POST; its value is not checked, only that a
 /// page could set it, which a cross-site page cannot without a preflight.
-pub const POST_HEADER: &str = "X-Photoframe";
+pub const POST_HEADER: &str = "X-Easellet";
 
 /// Largest settings form accepted. The portal sends a dozen short fields.
 const MAX_FORM: usize = 4 * 1024;
@@ -84,7 +84,7 @@ const UPLOAD_WAIT: Duration = Duration::from_secs(30);
 const TICK: Duration = Duration::from_millis(25);
 
 const PAGE: &str = include_str!("../web/index.html");
-const CONVERTER: &str = include_str!("../tools/pf6.mjs");
+const CONVERTER: &str = include_str!("../tools/el6.mjs");
 
 /// One picture the portal may show, as the slideshow sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -375,7 +375,7 @@ fn serve(stream: TcpStream, jobs: &Sender<Job>, password: Option<&str>) -> Resul
         (Method::Get, "/" | "/index.html") => {
             respond(&mut incoming.stream, 200, "OK", "text/html; charset=utf-8", PAGE.as_bytes())
         }
-        (Method::Get, "/pf6.mjs") => respond(
+        (Method::Get, "/el6.mjs") => respond(
             &mut incoming.stream,
             200,
             "OK",
@@ -388,7 +388,7 @@ fn serve(stream: TcpStream, jobs: &Sender<Job>, password: Option<&str>) -> Resul
             "OK",
             "text/plain; charset=utf-8",
             format!(
-                "OK photoframe-upload frame_bytes={FRAME_BYTES} routes=/ /pf6.mjs /gallery /image /upload /show /delete /settings /sensors /status\n"
+                "OK easellet-upload frame_bytes={FRAME_BYTES} routes=/ /el6.mjs /gallery /image /upload /show /delete /settings /sensors /status\n"
             )
             .as_bytes(),
         ),
@@ -656,7 +656,7 @@ fn base64_decode(text: &str) -> Option<Vec<u8>> {
 
 fn respond_locked(stream: &mut TcpStream) -> Result<(), String> {
     let head = "HTTP/1.1 401 Unauthorized\r\n\
-                WWW-Authenticate: Basic realm=\"photoframe\", charset=\"UTF-8\"\r\n\
+                WWW-Authenticate: Basic realm=\"easellet\", charset=\"UTF-8\"\r\n\
                 Content-Type: text/plain; charset=utf-8\r\n\
                 Content-Length: 36\r\n\
                 Connection: close\r\n\r\n\
@@ -990,7 +990,7 @@ mod tests {
 
     #[test]
     fn only_a_post_with_the_portal_header_counts_as_same_origin() {
-        let marked = parse_head("POST /settings HTTP/1.1\r\nx-photoframe: 1\r\n\r\n").unwrap();
+        let marked = parse_head("POST /settings HTTP/1.1\r\nx-easellet: 1\r\n\r\n").unwrap();
         assert!(marked.same_origin);
         // What a form on another site can make a browser send: no custom header.
         let plain = parse_head(
@@ -1017,7 +1017,7 @@ mod tests {
         for host in [
             "192.168.50.204",
             "192.168.50.204:80",
-            "photoframe",
+            "easellet",
             "ODCAED44.local",
             "odcaed44.local.",
             "frame.lan",
@@ -1066,12 +1066,12 @@ mod tests {
     #[test]
     fn a_query_parameter_is_percent_decoded() {
         assert_eq!(
-            query_value("path=PFTEST%2FUP0001.PF6", "path").unwrap(),
-            "PFTEST/UP0001.PF6"
+            query_value("path=EASELTEST%2FUP0001.EL6", "path").unwrap(),
+            "EASELTEST/UP0001.EL6"
         );
         assert_eq!(
-            query_value("x=1&path=my%20photo.pf6", "path").unwrap(),
-            "my photo.pf6"
+            query_value("x=1&path=my%20photo.el6", "path").unwrap(),
+            "my photo.el6"
         );
         assert_eq!(query_value("x=1", "path"), None);
         // A truncated escape is refused rather than passed through as text.
@@ -1082,12 +1082,12 @@ mod tests {
     #[test]
     fn the_listing_is_valid_json() {
         let entries = [Entry {
-            name: "PFTEST/UP0001.PF6".to_owned(),
+            name: "EASELTEST/UP0001.EL6".to_owned(),
             bytes: 192_000,
         }];
         assert_eq!(
-            list_json("PFTEST", &entries),
-            "{\"dir\":\"PFTEST\",\"frame_bytes\":192000,\"images\":[{\"name\":\"PFTEST/UP0001.PF6\",\"bytes\":192000}]}"
+            list_json("EASELTEST", &entries),
+            "{\"dir\":\"EASELTEST\",\"frame_bytes\":192000,\"images\":[{\"name\":\"EASELTEST/UP0001.EL6\",\"bytes\":192000}]}"
         );
         // A quote or a backslash in a name must not break the document.
         assert_eq!(json_escape("a\"b\\c"), "a\\\"b\\\\c");
@@ -1095,12 +1095,12 @@ mod tests {
 
     #[test]
     fn a_basic_credential_yields_the_password() {
-        // btoa("frame:photoframe-lan")
+        // btoa("frame:easellet-lan")
         let header = "Basic ZnJhbWU6cGhvdG9mcmFtZS1sYW4=";
-        assert_eq!(basic_password(header).as_deref(), Some("photoframe-lan"));
+        assert_eq!(basic_password(header).as_deref(), Some("easellet-lan"));
         assert_eq!(
             basic_password("basic ZnJhbWU6cGhvdG9mcmFtZS1sYW4=").as_deref(),
-            Some("photoframe-lan")
+            Some("easellet-lan")
         );
         // No colon, wrong scheme, or broken base64 is simply not a credential.
         assert_eq!(basic_password("Basic bm9jb2xvbg=="), None);
@@ -1142,7 +1142,7 @@ mod tests {
 
     #[test]
     fn the_served_converter_is_the_tested_one() {
-        // The gate proves `tools/pf6.mjs` matches `convert.py`. This asserts the
+        // The gate proves `tools/el6.mjs` matches `convert.py`. This asserts the
         // server serves *that file*, not a stale copy that drifted from it.
         assert!(CONVERTER.contains("export function pack("));
         assert!(CONVERTER.contains("export function packImage("));
@@ -1152,12 +1152,12 @@ mod tests {
     #[test]
     fn a_delete_request_names_one_picture() {
         let head =
-            parse_head("POST /delete?path=PFTEST%2FUPLOADS%2FUP0001.PF6 HTTP/1.1\r\n\r\n").unwrap();
+            parse_head("POST /delete?path=EASELTEST%2FUPLOADS%2FUP0001.EL6 HTTP/1.1\r\n\r\n").unwrap();
         assert_eq!(head.method, Method::Post);
         assert_eq!(head.path, "/delete");
         assert_eq!(
             query_value(&head.query, "path").unwrap(),
-            "PFTEST/UPLOADS/UP0001.PF6"
+            "EASELTEST/UPLOADS/UP0001.EL6"
         );
     }
 
@@ -1165,7 +1165,7 @@ mod tests {
     fn the_page_offers_deletion_only_where_the_frame_allows_it() {
         // The write policy is the firmware's (`image::removable`), but the page
         // must not draw a button bound to fail: it filters by the same prefix.
-        assert!(PAGE.contains("\"PFTEST/\"") || PAGE.contains("\"pftest/\""));
+        assert!(PAGE.contains("\"EASELTEST/\"") || PAGE.contains("\"easeltest/\""));
         assert!(PAGE.contains("/delete?path="));
     }
 
@@ -1175,6 +1175,6 @@ mod tests {
         // `FRAME_BYTES` and `packImage`, so the two cannot disagree.
         assert!(PAGE.contains("packImage"));
         assert!(PAGE.contains("FRAME_BYTES"));
-        assert!(!PAGE.contains("192000"), "size must come from pf6.mjs");
+        assert!(!PAGE.contains("192000"), "size must come from el6.mjs");
     }
 }

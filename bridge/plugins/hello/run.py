@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Greeting card: the hello-world of photoframe-bridge plugins."""
+"""Greeting card: the hello-world of easellet-bridge plugins."""
 
 import sys
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
-from photoframe_plugin import Plugin  # noqa: E402
+from easellet_plugin import Plugin  # noqa: E402
 
 plugin = Plugin.read()
 now = datetime.now().strftime("%H:%M")

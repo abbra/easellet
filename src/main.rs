@@ -1250,7 +1250,7 @@ fn run() -> Result<(), EspError> {
             match command {
                 Command::Help => send(
                     &mut usb,
-                    "OK help info buttons led on|off sensor rtc pmu sd\r\nsleep [0|60..86400] (deep sleep now; BOOT/KEY/PWR wake it, and the timer if non-zero; default power.sleep_secs)\r\nsd ls [<dir>]\r\nconfig|config save (settings on SD)\r\ngallery|status|start [<dir> [120..3600s]]|stop|next (slideshow over .bmp/.pf6 in one directory; `config save` persists gallery.dir/secs/auto)\r\nweb|status|start|stop|password <8..64 chars>|password off (page on port 80: upload, gallery as rendered with removal, settings; only PFTEST may be written or emptied; the password locks the whole page and is saved at once)\r\ndisplay bars|clear black|white|yellow|red|blue|green|sleep|status\r\ndisplay bmp <file.bmp>|raw <file.pf6>\r\naudio status|regs|level <ms>|rec <1..10s> (double-beep cue)|tone [100..2000ms]|loop [100..2000ms]|hex|volume <db>|gain <db>|play <file.wav>|off\r\nwifi scan|status|off|auto on|off|join [<ssid> [password]]|time [ntp server]\r\nai|status|selftest|stt [ms] (double-beep cue, records, posts to /stt)|listen [ms] (waits for KEY, then as `ai stt`, prints and draws the transcript)|talk [ms] (KEY, then stt, llm, tts, speech, panel)|ask <text> (posts to /llm then /tts, plays the answer)|url <http://host:port>|key <token> (`-` clears; `config save` persists)\r\nai idle off|key|voice (who may start a turn: nobody, KEY, or loudness on the microphones; `config save` persists)\r\nai threshold <20..4000> (voice gate in sample units; read `last_rms` in `ai status` first)\r\nI2C reads, ALDO4 display rail, ALDO3 audio rail only when audio is used. SD read-only except PFTEST. Radio only for wifi commands. `wifi join` with no arguments reuses PFTEST/CONFIG.TXT; that file is loaded at boot and holds the passphrase once `config save` runs; `wifi.auto=1` joins at boot and stays online.\r\n",
+                    "OK help info buttons led on|off sensor rtc pmu sd\r\nsleep [0|60..86400] (deep sleep now; BOOT/KEY/PWR wake it, and the timer if non-zero; default power.sleep_secs)\r\nsd ls [<dir>]\r\nconfig|config save (settings on SD)\r\ngallery|status|start [<dir> [120..3600s]]|stop|next (slideshow over .bmp/.el6 in one directory; `config save` persists gallery.dir/secs/auto)\r\nweb|status|start|stop|password <8..64 chars>|password off (page on port 80: upload, gallery as rendered with removal, settings; only EASELTEST may be written or emptied; the password locks the whole page and is saved at once)\r\ndisplay bars|clear black|white|yellow|red|blue|green|sleep|status\r\ndisplay bmp <file.bmp>|raw <file.el6>\r\naudio status|regs|level <ms>|rec <1..10s> (double-beep cue)|tone [100..2000ms]|loop [100..2000ms]|hex|volume <db>|gain <db>|play <file.wav>|off\r\nwifi scan|status|off|auto on|off|join [<ssid> [password]]|time [ntp server]\r\nai|status|selftest|stt [ms] (double-beep cue, records, posts to /stt)|listen [ms] (waits for KEY, then as `ai stt`, prints and draws the transcript)|talk [ms] (KEY, then stt, llm, tts, speech, panel)|ask <text> (posts to /llm then /tts, plays the answer)|url <http://host:port>|key <token> (`-` clears; `config save` persists)\r\nai idle off|key|voice (who may start a turn: nobody, KEY, or loudness on the microphones; `config save` persists)\r\nai threshold <20..4000> (voice gate in sample units; read `last_rms` in `ai status` first)\r\nI2C reads, ALDO4 display rail, ALDO3 audio rail only when audio is used. SD read-only except EASELTEST. Radio only for wifi commands. `wifi join` with no arguments reuses EASELTEST/CONFIG.TXT; that file is loaded at boot and holds the passphrase once `config save` runs; `wifi.auto=1` joins at boot and stays online.\r\n",
                 )?,
                 Command::Info => {
                     // SAFETY: These IDF heap queries accept capability masks, require
@@ -1273,7 +1273,7 @@ fn run() -> Result<(), EspError> {
                     send(
                         &mut usb,
                         &format!(
-                            "OK photoframe {} Rev2.0 target=ESP32-S3 psram_total={} psram_free={}\r\n  internal_free={internal_free} internal_min_free={internal_min} main_stack_min_free={main_stack_min}\r\n  wake={} wakes={} sleep_secs={} awake_secs={} idle_s={} picture_wake={picture_wake}\r\nPMIC ALDO4 EPD rail configured to 3.3 V; other rails untouched. PSRAM startup test configured.\r\n{audio_rail}{settings_note}  source={settings_state} path={} password_on_disk={} {wifi_auto} audio_defaults={audio_defaults}\r\n",
+                            "OK easellet {} Rev2.0 target=ESP32-S3 psram_total={} psram_free={}\r\n  internal_free={internal_free} internal_min_free={internal_min} main_stack_min_free={main_stack_min}\r\n  wake={} wakes={} sleep_secs={} awake_secs={} idle_s={} picture_wake={picture_wake}\r\nPMIC ALDO4 EPD rail configured to 3.3 V; other rails untouched. PSRAM startup test configured.\r\n{audio_rail}{settings_note}  source={settings_state} path={} password_on_disk={} {wifi_auto} audio_defaults={audio_defaults}\r\n",
                             env!("CARGO_PKG_VERSION"),
                             psram,
                             free,
@@ -3175,7 +3175,7 @@ fn save_upload(frame: &[u8], settings: &config::Settings) -> Result<String, Stri
         .collect();
     let number = gallery::first_free_upload(names.iter().map(String::as_str), MAX_UPLOADS)
         .ok_or_else(|| format!("ERR {directory} already holds {MAX_UPLOADS} uploads\n"))?;
-    let relative = format!("{directory}/UP{number:04}.PF6");
+    let relative = format!("{directory}/UP{number:04}.EL6");
     let file = Path::new("/sdcard").join(&relative);
     fs::write(&file, frame).map_err(|error| format!("ERR write {}: {error}\n", file.display()))?;
     Ok(relative)
@@ -3209,7 +3209,7 @@ fn list_gallery(
 ///
 /// The path arrives from a query string, so it is treated as untrusted input;
 /// the policy itself lives in `image::removable`, which refuses anything that is
-/// not a picture inside `PFTEST` (see its tests). This function only performs
+/// not a picture inside `EASELTEST` (see its tests). This function only performs
 /// the removal and keeps the slideshow's list honest afterwards.
 fn delete_picture(
     path: &str,
@@ -3414,10 +3414,10 @@ fn apply_live_settings(
 }
 
 /// Where `gallery start` looks and where the portal writes when neither the
-/// command nor the file names a directory. Inside `PFTEST`, the one place a host
+/// command nor the file names a directory. Inside `EASELTEST`, the one place a host
 /// is allowed to write, and its own directory so uploads stay separable from
 /// `CONFIG.TXT`.
-const DEFAULT_GALLERY_DIR: &str = "PFTEST/UPLOADS";
+const DEFAULT_GALLERY_DIR: &str = "EASELTEST/UPLOADS";
 
 /// Start the slideshow, from the console or from `gallery.auto` at boot.
 ///
@@ -3446,7 +3446,7 @@ fn gallery_start(
     };
     if images.is_empty() {
         return format!(
-            "ERR gallery: no .bmp or .pf6 in /sdcard/{directory}; copy images there first\r\n"
+            "ERR gallery: no .bmp or .el6 in /sdcard/{directory}; copy images there first\r\n"
         );
     }
     let interval = seconds.map_or_else(

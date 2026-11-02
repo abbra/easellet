@@ -1,4 +1,4 @@
-//! photoframe-bridge: the LAN service the frame talks to.
+//! easellet-bridge: the LAN service the frame talks to.
 //!
 //! The device knows nothing about models, voices or keys. It uploads µ-law, gets text
 //! back, and asks for speech. Everything else happens here, where there is a real CPU
@@ -32,9 +32,9 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 const USAGE: &str = "\
-usage: photoframe-bridge [options]
+usage: easellet-bridge [options]
 
-  --config <path>      settings file, default ~/.config/photoframe-bridge/bridge.toml;
+  --config <path>      settings file, default ~/.config/easellet-bridge/bridge.toml;
                        created from the effective settings if it does not exist
   --addr <host:port>   listen address, default 0.0.0.0:8080
   --token <token>      require 'Authorization: Bearer <token>' from frames
@@ -44,9 +44,9 @@ usage: photoframe-bridge [options]
   --tts <backend>      stub (default) | cmd:<program> [args...]  (text on stdin,
                        raw 16-bit mono 16 kHz PCM on stdout)
   --wake <stems>       comma-separated stems a voice-triggered transcript must
-                       contain, e.g. 'рамк,фоторам,frame' (also PF_WAKE)
+                       contain, e.g. 'рамк,фоторам,frame' (also EASEL_WAKE)
 
-Precedence: the file, then PF_WAKE / PF_LLM_URL / PF_LLM_SYSTEM, then flags. A
+Precedence: the file, then EASEL_WAKE / EASEL_LLM_URL / EASEL_LLM_SYSTEM, then flags. A
 value set by a flag or variable wins for this run and is read-only in the web UI
 (http://<addr>/); everything else is edited there and saved to the file.
 
@@ -85,7 +85,7 @@ fn plugin_dirs(settings_path: &std::path::Path) -> Vec<PathBuf> {
     dirs
 }
 
-/// `photoframe-bridge plugin list|run ...`: try plugins without a frame.
+/// `easellet-bridge plugin list|run ...`: try plugins without a frame.
 fn plugin_command(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let dirs = plugin_dirs(&settings::default_path());
     let (found, problems) = plugins::discover(&dirs);
@@ -107,13 +107,13 @@ fn plugin_command(mut args: impl Iterator<Item = String>) -> Result<(), String> 
         Some("run") => {
             let name = args
                 .next()
-                .ok_or("plugin run <name> [--param k=v]... [--preview out.png] [--pf6 out.pf6]")?;
+                .ok_or("plugin run <name> [--param k=v]... [--preview out.png] [--el6 out.el6]")?;
             let plugin = found
                 .iter()
                 .find(|plugin| plugin.manifest.name == name)
                 .ok_or_else(|| format!("no plugin {name} in {dirs:?}"))?;
             let mut given = serde_json::Map::new();
-            let (mut preview, mut pf6) = (None, None);
+            let (mut preview, mut el6) = (None, None);
             while let Some(arg) = args.next() {
                 let value = args.next().ok_or_else(|| format!("{arg} needs a value"))?;
                 match arg.as_str() {
@@ -123,7 +123,7 @@ fn plugin_command(mut args: impl Iterator<Item = String>) -> Result<(), String> 
                         given.insert(key.to_owned(), serde_json::Value::String(value.to_owned()));
                     }
                     "--preview" => preview = Some(value),
-                    "--pf6" => pf6 = Some(value),
+                    "--el6" => el6 = Some(value),
                     other => return Err(format!("unknown option {other}")),
                 }
             }
@@ -154,7 +154,7 @@ fn plugin_command(mut args: impl Iterator<Item = String>) -> Result<(), String> 
                 std::fs::write(&path, png).map_err(|error| format!("{path}: {error}"))?;
                 println!("wrote {path}");
             }
-            if let Some(path) = pf6 {
+            if let Some(path) = el6 {
                 std::fs::write(&path, &image).map_err(|error| format!("{path}: {error}"))?;
                 println!("wrote {path}");
             }
@@ -201,9 +201,9 @@ fn run() -> Result<(), String> {
     }
     // Variables first so a flag for the same key wins over them.
     for (key, variable) in [
-        ("wake", "PF_WAKE"),
-        ("llm_url", "PF_LLM_URL"),
-        ("llm_system", "PF_LLM_SYSTEM"),
+        ("wake", "EASEL_WAKE"),
+        ("llm_url", "EASEL_LLM_URL"),
+        ("llm_system", "EASEL_LLM_SYSTEM"),
     ] {
         if let Ok(value) = std::env::var(variable)
             && !value.is_empty()
@@ -264,7 +264,7 @@ fn run() -> Result<(), String> {
     };
 
     eprintln!(
-        "photoframe-bridge: audio {ASSISTANT_RATE} Hz mono, limits {} / {} bytes",
+        "easellet-bridge: audio {ASSISTANT_RATE} Hz mono, limits {} / {} bytes",
         MAX_TEXT, MAX_UTTERANCE
     );
     let live = settings.live();

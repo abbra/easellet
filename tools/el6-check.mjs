@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// Node CLI half of `tools/pf6.mjs`, used only by `tools/check-pf6-js.py`.
+// Node CLI half of `tools/el6.mjs`, used only by `tools/check-el6-js.py`.
 //
-//   node tools/pf6-check.mjs <rgba-in> <pf6-out> [--no-dither]
+//   node tools/el6-check.mjs <rgba-in> <el6-out> [--no-dither]
 //
 // Reads WIDTH*HEIGHT*4 raw RGBA bytes and writes a 192000-byte frame. It exists
 // so the browser module can be tested without a browser: the page and this
 // script call the same `pack`.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { FRAME_BYTES, HEIGHT, WIDTH, pack, unpack } from "./pf6.mjs";
+import { FRAME_BYTES, HEIGHT, WIDTH, pack, unpack } from "./el6.mjs";
 
 const [input, output, ...flags] = process.argv.slice(2);
 if (!input || !output) {
-  console.error("usage: node tools/pf6-check.mjs <rgba-in> <pf6-out> [--no-dither]");
+  console.error("usage: node tools/el6-check.mjs <rgba-in> <el6-out> [--no-dither]");
   process.exit(2);
 }
 

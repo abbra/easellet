@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove `tools/pf6.mjs` and `tools/convert.py` produce identical frames.
+"""Prove `tools/el6.mjs` and `tools/convert.py` produce identical frames.
 
 The upload page will convert pictures in the browser and post a raw frame; the
 SD-card path converts with `tools/convert.py` on the host. If those two ever
@@ -9,8 +9,8 @@ bytes - the resize is necessarily engine-specific, everything after it is not -
 and the resulting frames are compared byte for byte.
 
 usage:
-    tools/check-pf6-js.py                 # generated images
-    tools/check-pf6-js.py photo.jpg ...   # real ones, cover-fitted first
+    tools/check-el6-js.py                 # generated images
+    tools/check-el6-js.py photo.jpg ...   # real ones, cover-fitted first
 """
 
 import hashlib
@@ -25,7 +25,7 @@ sys.path.insert(0, str(HERE))
 
 from convert import HEIGHT, WIDTH, frame_from_rgb  # noqa: E402
 
-SCRATCH = Path.home() / "tmp" / "frame" / "pf6-check"
+SCRATCH = Path.home() / "tmp" / "frame" / "el6-check"
 
 
 def generated() -> list[tuple[str, Image.Image]]:
@@ -88,8 +88,8 @@ def check(name: str, image: Image.Image) -> bool:
     source.write_bytes(rgba)
     ok = True
     for dither in (True, False):
-        node_output = SCRATCH / f"{name}-{'dither' if dither else 'plain'}.pf6"
-        command = ["node", str(HERE / "pf6-check.mjs"), str(source), str(node_output)]
+        node_output = SCRATCH / f"{name}-{'dither' if dither else 'plain'}.el6"
+        command = ["node", str(HERE / "el6-check.mjs"), str(source), str(node_output)]
         if not dither:
             command.append("--no-dither")
         completed = subprocess.run(command, check=True, capture_output=True, text=True)

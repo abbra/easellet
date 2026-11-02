@@ -7,7 +7,7 @@
 //!   page that rebinds its own domain to the bridge still sends that domain, and
 //!   gets 403, so it cannot read the API.
 //! - **Optional password** (`ui_password`), HTTP Basic, any user name.
-//! - **Every POST carries `X-Photoframe`**, which a page on another site cannot
+//! - **Every POST carries `X-Easellet`**, which a page on another site cannot
 //!   add without a CORS preflight the bridge never answers.
 //! - **Secrets are write-only**: the settings document says whether they are set,
 //!   never what they are.
@@ -31,10 +31,10 @@ const PAGE: &str = include_str!("../web/index.html");
 const APP: &str = include_str!("../web/app.js");
 /// The frame's own converter, served as is: the firmware gate proves it matches
 /// `tools/convert.py`, so pictures prepared here look the same as anywhere else.
-const PF6: &str = include_str!("../../tools/pf6.mjs");
+const EL6: &str = include_str!("../../tools/el6.mjs");
 
 /// Header every POST must carry; its value is not checked.
-pub const POST_HEADER: &str = "X-Photoframe";
+pub const POST_HEADER: &str = "X-Easellet";
 /// Largest JSON body accepted by the API.
 pub const MAX_BODY: usize = 64 * 1024;
 /// Largest picture body (`/upload`, `/display`): one frame in the panel's format.
@@ -121,7 +121,7 @@ impl Response {
 
 /// Is this a UI path rather than one of the frame's endpoints?
 pub fn is_ui_path(path: &str) -> bool {
-    matches!(path, "/" | "/index.html" | "/app.js" | "/pf6.mjs") || path.starts_with("/api/")
+    matches!(path, "/" | "/index.html" | "/app.js" | "/el6.mjs") || path.starts_with("/api/")
 }
 
 pub fn handle(request: Request<'_>, context: &Context) -> Response {
@@ -148,7 +148,7 @@ pub fn handle(request: Request<'_>, context: &Context) -> Response {
         let mut response = Response::text(401, "ERR the bridge asks for its password\n");
         response.headers.push((
             "WWW-Authenticate",
-            "Basic realm=\"photoframe-bridge\", charset=\"UTF-8\"".to_owned(),
+            "Basic realm=\"easellet-bridge\", charset=\"UTF-8\"".to_owned(),
         ));
         return response;
     }
@@ -158,7 +158,7 @@ pub fn handle(request: Request<'_>, context: &Context) -> Response {
     match (request.method, path) {
         ("GET", "/" | "/index.html") => Response::new(200, "text/html; charset=utf-8", PAGE),
         ("GET", "/app.js") => Response::new(200, "text/javascript; charset=utf-8", APP),
-        ("GET", "/pf6.mjs") => Response::new(200, "text/javascript; charset=utf-8", PF6),
+        ("GET", "/el6.mjs") => Response::new(200, "text/javascript; charset=utf-8", EL6),
         ("GET", "/api/status") => status(context),
         ("GET", "/api/settings") => settings(context),
         ("POST", "/api/settings") => save_settings(context, &request.body),
@@ -1125,7 +1125,7 @@ mod tests {
     fn the_password_guards_everything_and_secrets_stay_hidden() {
         let mut settings = Settings::default();
         settings.ui_password = "hunter2hunter2".to_owned();
-        settings.token = "photoframe-lan".to_owned();
+        settings.token = "easellet-lan".to_owned();
         let (context, _dir) = context(settings);
         let response = handle(get("/api/settings", "192.168.50.93"), &context);
         assert_eq!(response.status, 401);
@@ -1144,7 +1144,7 @@ mod tests {
         assert_eq!(response.status, 200);
         let body = String::from_utf8(response.body).unwrap();
         assert!(
-            !body.contains("hunter2") && !body.contains("photoframe-lan"),
+            !body.contains("hunter2") && !body.contains("easellet-lan"),
             "{body}"
         );
     }
@@ -1194,13 +1194,13 @@ mod tests {
     #[test]
     fn the_pull_endpoint_wants_the_token_and_answers_etags() {
         let mut settings = Settings::default();
-        settings.token = "photoframe-lan".to_owned();
+        settings.token = "easellet-lan".to_owned();
         let (context, _dir) = context(settings);
         assert!(is_pull_path("/frames/94a990caed46/next"));
         assert!(!is_pull_path("/frames/../next") && !is_pull_path("/frames//next"));
         let path = "/frames/94a990caed46/next";
         assert_eq!(pull(&context, path, None, None).status, 401);
-        let auth = Some("Bearer photoframe-lan");
+        let auth = Some("Bearer easellet-lan");
         assert_eq!(
             pull(&context, path, auth, None).status,
             204,
@@ -1229,7 +1229,7 @@ mod tests {
     #[test]
     fn the_page_marks_every_post_and_ships_the_converter() {
         assert!(APP.contains(&format!("\"{POST_HEADER}\": \"1\"")));
-        assert!(PF6.contains("export function packImage("));
+        assert!(EL6.contains("export function packImage("));
         assert!(PAGE.contains("app.js"));
     }
 }

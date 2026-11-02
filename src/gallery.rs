@@ -299,7 +299,7 @@ pub fn keep_first<T: Ord>(kept: &mut Vec<T>, item: T, limit: usize) {
     kept.truncate(limit);
 }
 
-/// The lowest `n` in `1..=max` with no `UPnnnn.PF6` among `names`, compared
+/// The lowest `n` in `1..=max` with no `UPnnnn.EL6` among `names`, compared
 /// without regard to case. One pass over the names a directory read already
 /// produced, instead of asking the card about each number in turn.
 pub fn first_free_upload<'a>(names: impl IntoIterator<Item = &'a str>, max: u32) -> Option<u32> {
@@ -308,7 +308,7 @@ pub fn first_free_upload<'a>(names: impl IntoIterator<Item = &'a str>, max: u32)
         let upper = name.to_ascii_uppercase();
         let Some(digits) = upper
             .strip_prefix("UP")
-            .and_then(|rest| rest.strip_suffix(".PF6"))
+            .and_then(|rest| rest.strip_suffix(".EL6"))
         else {
             continue;
         };
@@ -349,7 +349,7 @@ mod tests {
         // clamped, so a test that names a number below it is really testing the
         // clamp and not the schedule.
         let interval = Duration::from_secs(u64::from(MIN_INTERVAL_SECS));
-        gallery.start("PFTEST/GALLERY", images(&["b.bmp", "a.bmp"]), interval);
+        gallery.start("EASELTEST/GALLERY", images(&["b.bmp", "a.bmp"]), interval);
         // Sorted, so the card's own order does not decide what shows first.
         assert!(gallery.wants_advance(now, true));
         assert_eq!(gallery.take_next(now).as_deref(), Some("a.bmp"));
@@ -362,22 +362,22 @@ mod tests {
     fn an_upload_jumps_the_queue_and_a_removal_keeps_the_position() {
         let mut gallery = Gallery::stopped();
         gallery.start(
-            "PFTEST/UPLOADS",
-            images(&["a.pf6", "b.pf6", "c.pf6"]),
+            "EASELTEST/UPLOADS",
+            images(&["a.el6", "b.el6", "c.el6"]),
             Duration::from_secs(300),
         );
         // The slideshow is about to draw "a".
-        assert_eq!(gallery.take_next(Instant::now()).unwrap(), "a.pf6");
+        assert_eq!(gallery.take_next(Instant::now()).unwrap(), "a.el6");
 
         gallery.replace(
-            images(&["a.pf6", "b.pf6", "c.pf6", "UP0001.PF6"]),
-            Some("UP0001.PF6"),
+            images(&["a.el6", "b.el6", "c.el6", "UP0001.EL6"]),
+            Some("UP0001.EL6"),
         );
-        assert_eq!(gallery.take_next(Instant::now()).unwrap(), "UP0001.PF6");
+        assert_eq!(gallery.take_next(Instant::now()).unwrap(), "UP0001.EL6");
 
         // A file disappearing must not index past the end.
-        gallery.replace(images(&["UP0001.PF6"]), None);
-        assert_eq!(gallery.take_next(Instant::now()).unwrap(), "UP0001.PF6");
+        gallery.replace(images(&["UP0001.EL6"]), None);
+        assert_eq!(gallery.take_next(Instant::now()).unwrap(), "UP0001.EL6");
     }
 
     #[test]
@@ -386,11 +386,11 @@ mod tests {
         let now = Instant::now();
         gallery.start(
             "g",
-            images(&["one.bmp", "two.pf6"]),
+            images(&["one.bmp", "two.el6"]),
             Duration::from_secs(60),
         );
         assert_eq!(gallery.take_next(now).as_deref(), Some("one.bmp"));
-        assert_eq!(gallery.take_next(now).as_deref(), Some("two.pf6"));
+        assert_eq!(gallery.take_next(now).as_deref(), Some("two.el6"));
         assert_eq!(gallery.take_next(now).as_deref(), Some("one.bmp"));
     }
 
@@ -477,11 +477,11 @@ mod tests {
         let mut gallery = Gallery::stopped();
         let now = Instant::now();
         let interval = Duration::from_secs(u64::from(MIN_INTERVAL_SECS));
-        gallery.start("PFTEST/GALLERY", images(&["a.bmp", "b.bmp"]), interval);
+        gallery.start("EASELTEST/GALLERY", images(&["a.bmp", "b.bmp"]), interval);
         let _ = gallery.take_next(now);
         gallery.record_advance();
         let status = gallery.status();
-        assert!(status.contains("dir=/sdcard/PFTEST/GALLERY"), "{status}");
+        assert!(status.contains("dir=/sdcard/EASELTEST/GALLERY"), "{status}");
         assert!(status.contains("next=b.bmp"), "{status}");
         assert!(
             status.contains(&format!("interval_s={}", interval.as_secs())),
@@ -508,31 +508,31 @@ mod tests {
     fn an_upload_takes_the_lowest_free_number() {
         assert_eq!(first_free_upload([], 9_999), Some(1));
         assert_eq!(
-            first_free_upload(["UP0001.PF6", "up0002.pf6", "UP0004.PF6", "x.bmp"], 9_999),
+            first_free_upload(["UP0001.EL6", "up0002.el6", "UP0004.EL6", "x.bmp"], 9_999),
             Some(3)
         );
         // Names that only look similar do not take a number.
         assert_eq!(
             first_free_upload(
-                ["UP1.PF6", "UP0001.BMP", "UPABCD.PF6", "UP00001.PF6"],
+                ["UP1.EL6", "UP0001.BMP", "UPABCD.EL6", "UP00001.EL6"],
                 9_999
             ),
             Some(1)
         );
-        assert_eq!(first_free_upload(["UP0001.PF6", "UP0002.PF6"], 2), None);
+        assert_eq!(first_free_upload(["UP0001.EL6", "UP0002.EL6"], 2), None);
     }
 
     #[test]
     fn the_slideshow_continues_after_the_last_picture() {
-        let images: Vec<String> = ["A/1.PF6", "A/2.PF6", "A/4.PF6"]
+        let images: Vec<String> = ["A/1.EL6", "A/2.EL6", "A/4.EL6"]
             .iter()
             .map(|name| (*name).to_owned())
             .collect();
-        assert_eq!(after(&images, "A/1.PF6"), Some("A/2.PF6"));
-        assert_eq!(after(&images, "A/4.PF6"), Some("A/1.PF6"));
+        assert_eq!(after(&images, "A/1.EL6"), Some("A/2.EL6"));
+        assert_eq!(after(&images, "A/4.EL6"), Some("A/1.EL6"));
         // A deleted picture: the next one in order still follows.
-        assert_eq!(after(&images, "A/3.PF6"), Some("A/4.PF6"));
-        assert_eq!(after(&[], "A/1.PF6"), None);
+        assert_eq!(after(&images, "A/3.EL6"), Some("A/4.EL6"));
+        assert_eq!(after(&[], "A/1.EL6"), None);
     }
 
     #[test]

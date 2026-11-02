@@ -4,7 +4,7 @@
 //!
 //! The Spectra 6 path is a port of `tools/convert.py`'s `frame_from_rgb`, kept
 //! byte-identical to it by a test that runs the Python on the same pixels: the
-//! same picture must look the same whether the browser (`tools/pf6.mjs`), the
+//! same picture must look the same whether the browser (`tools/el6.mjs`), the
 //! host converter or the bridge prepared it.
 //!
 //! Cards are e-paper first: text and shapes are drawn without anti-aliasing in
@@ -996,7 +996,7 @@ mod tests {
     use std::process::{Command, Stdio};
 
     /// Deterministic pixels: gradients, exact palette blocks and noise, the
-    /// cases `check-pf6-js.py` uses for the browser converter.
+    /// cases `check-el6-js.py` uses for the browser converter.
     fn test_pixels() -> Vec<u8> {
         let mut seed = 0x2446_u32;
         let mut rgb = Vec::with_capacity(WIDTH * HEIGHT * 3);

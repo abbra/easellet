@@ -264,7 +264,7 @@
         <div class="field"><label for="ai-url">Мост, URL</label><input id="ai-url" name="ai.url" type="text" placeholder="http://192.168.50.93:8095"></div>
         <div class="field"><label for="ai-key">Токен моста</label><input id="ai-key" name="ai.key" type="password" autocomplete="off" placeholder="оставьте пустым, чтобы не менять"></div>
         <!-- The four languages the bridge's recogniser is allowed to pick
-             (`PF_STT_LANGS=ru,en,fi,fr` in bridge/src/whisper.rs). Offering a
+             (`EASEL_STT_LANGS=ru,en,fi,fr` in bridge/src/whisper.rs). Offering a
              language the bridge does not hear would be a promise the frame
              cannot keep; a tag outside this list still round-trips. -->
         <div class="field"><label for="ai-lang">Язык</label>
@@ -292,7 +292,7 @@
 
       <fieldset>
         <legend>Слайд-шоу</legend>
-        <div class="field"><label for="gallery-dir">Папка на карте</label><input id="gallery-dir" name="gallery.dir" type="text" placeholder="PFTEST/UPLOADS"></div>
+        <div class="field"><label for="gallery-dir">Папка на карте</label><input id="gallery-dir" name="gallery.dir" type="text" placeholder="EASELTEST/UPLOADS"></div>
         <div class="field"><label for="gallery-secs">Интервал, сек</label><input id="gallery-secs" name="gallery.secs" type="number" step="30" min="120" max="3600" placeholder="300"></div>
         <label class="option"><input type="checkbox" name="gallery.auto" id="gallery-auto"> показывать при включении</label>
       </fieldset>
@@ -318,12 +318,12 @@
 
   <footer>
     Галерея показывает то же, что нарисовано на экране; удалять можно только то,
-    что лежит в <code>PFTEST</code> — остальное на карте принадлежит прошивке.
+    что лежит в <code>EASELTEST</code> — остальное на карте принадлежит прошивке.
   </footer>
 </main>
 
 <script type="module">
-import { WIDTH, HEIGHT, FRAME_BYTES, packImage, drawFrame } from "./pf6.mjs";
+import { WIDTH, HEIGHT, FRAME_BYTES, packImage, drawFrame } from "./el6.mjs";
 
 const $ = (id) => document.getElementById(id);
 const say = (id, text, kind) => {
@@ -431,7 +431,7 @@ function post(url, init = {}) {
   return fetch(url, {
     ...init,
     method: "POST",
-    headers: { ...(init.headers ?? {}), "X-Photoframe": "1" },
+    headers: { ...(init.headers ?? {}), "X-Easellet": "1" },
   });
 }
 
@@ -543,9 +543,9 @@ const PAGE = 12;
 const CACHE_LIMIT = 48;
 const cache = new Map();
 
-// The firmware deletes only inside PFTEST, so the page does not offer a button
+// The firmware deletes only inside EASELTEST, so the page does not offer a button
 // that is bound to fail: the vendor's own pictures are shown and left alone.
-const WRITABLE = "pftest/";
+const WRITABLE = "easeltest/";
 const removable = (name) => name.toLowerCase().startsWith(WRITABLE);
 
 const gallery = {
@@ -723,7 +723,7 @@ function renderGallery() {
 
   if (gallery.images.length === 0) {
     empty.hidden = false;
-    empty.textContent = `В папке ${gallery.dir || "PFTEST/UPLOADS"} пока нет картинок — отправьте первую.`;
+    empty.textContent = `В папке ${gallery.dir || "EASELTEST/UPLOADS"} пока нет картинок — отправьте первую.`;
   } else if (images.length === 0) {
     empty.hidden = false;
     empty.textContent = `По запросу «${gallery.search}» ничего нет.`;

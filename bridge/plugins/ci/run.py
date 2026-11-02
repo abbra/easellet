@@ -19,7 +19,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
-from photoframe_plugin import Plugin  # noqa: E402
+from easellet_plugin import Plugin  # noqa: E402
 
 FAILED = {"failure", "timed_out", "action_required", "startup_failure"}
 PASSED = {"success"}
@@ -33,7 +33,7 @@ if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
     plugin.fail(f"ci: {repo!r} is not owner/name")
 count = int(plugin.params.get("count", "6"))
 token = plugin.params.get("token")
-headers = {"Accept": "application/vnd.github+json", "User-Agent": "photoframe-bridge"}
+headers = {"Accept": "application/vnd.github+json", "User-Agent": "easellet-bridge"}
 if token:
     headers["Authorization"] = f"Bearer {token}"
 # Two requests per PR whose result is not known yet; without a token GitHub

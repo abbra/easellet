@@ -362,7 +362,7 @@ pub struct PortalAnswer {
     pub body: Vec<u8>,
 }
 
-/// A request to a frame's portal. POSTs carry the portal's `X-Photoframe`
+/// A request to a frame's portal. POSTs carry the portal's `X-Easellet`
 /// header; `path` is built by the bridge, never taken whole from a request.
 pub fn portal(
     host: &str,
@@ -378,7 +378,7 @@ pub fn portal(
         .build();
     let mut request = agent.request(method, &url);
     if method == "POST" {
-        request = request.set("X-Photoframe", "1");
+        request = request.set("X-Easellet", "1");
     }
     if !password.is_empty() {
         request = request.set(

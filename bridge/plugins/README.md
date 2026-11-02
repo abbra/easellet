@@ -1,4 +1,4 @@
-# Writing a plugin for photoframe-bridge
+# Writing a plugin for easellet-bridge
 
 A plugin is a program that decides **what** a frame should show; the bridge
 decides **how** (size, colours, orientation, dithering) for each frame, and when
@@ -7,7 +7,7 @@ to send it. Any language works. Design: `research/bridge-ui-design.md` section 5
 ## Layout
 
 ```
-~/.config/photoframe-bridge/plugins/<name>/   your plugins (checked first)
+~/.config/easellet-bridge/plugins/<name>/   your plugins (checked first)
 bridge/plugins/<name>/                        the ones shipped with the bridge
     plugin.toml    the manifest
     run…           the program, executable, path given in the manifest
@@ -64,7 +64,7 @@ people actually say.
 
 The bridge starts the program in its directory with a cleared environment
 (`PATH`, `HOME`, `TZ`, proxy and CA variables, `LANG=C.UTF-8`,
-`PF_PLUGIN_SCRATCH`) and writes one JSON document to its stdin:
+`EASEL_PLUGIN_SCRATCH`) and writes one JSON document to its stdin:
 
 ```json
 {
@@ -74,7 +74,7 @@ The bridge starts the program in its directory with a cleared environment
             "orientation": "landscape",
             "palette": ["black", "white", "yellow", "red", "blue", "green"]},
   "locale": "ru-RU", "timezone": "Europe/Helsinki", "now": "2026-11-02T10:00:00Z",
-  "scratch": "/tmp/photoframe-bridge-…",
+  "scratch": "/tmp/easellet-bridge-…",
   "state": null
 }
 ```
@@ -151,13 +151,13 @@ is logged and shown in the UI, and the frame keeps what it shows.
 
 ## Python
 
-`bridge/plugins/sdk/photoframe_plugin.py` reads the input and writes the answer:
+`bridge/plugins/sdk/easellet_plugin.py` reads the input and writes the answer:
 
 ```python
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
-from photoframe_plugin import Plugin
+from easellet_plugin import Plugin
 
 plugin = Plugin.read()
 plugin.items("CI", [("main", "ok"), ("nightly", "fail")], state={"seen": 2})
@@ -168,8 +168,8 @@ plugin.items("CI", [("main", "ok"), ("nightly", "fail")], state={"seen": 2})
 ## Trying it
 
 ```bash
-photoframe-bridge plugin list
-photoframe-bridge plugin run hello --param name=мир --preview hello.png
+easellet-bridge plugin list
+easellet-bridge plugin run hello --param name=мир --preview hello.png
 ```
 
 (`./bridge/build.sh run plugin …` from the repository.) The web UI's Plugins tab

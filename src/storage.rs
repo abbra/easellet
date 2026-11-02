@@ -137,7 +137,7 @@ impl Storage {
     /// The image files in one directory, as paths relative to the card root.
     ///
     /// Both formats the panel can decode are collected - a `.bmp` and the raw
-    /// `.pf6` the host converter writes - because a slideshow is about the
+    /// `.el6` the host converter writes - because a slideshow is about the
     /// picture, not about which of the two loaders happens to read it. Names are
     /// sorted so the order on the panel is the order in the directory listing
     /// rather than whatever order FAT hands back.
@@ -195,9 +195,9 @@ impl Storage {
                 .to_string_lossy()
                 .into_owned();
             // Case-insensitive: the vendor's own files are `01_DAYU.BMP` while the
-            // converter writes `.pf6` in lower case.
+            // converter writes `.el6` in lower case.
             let lower = name.to_ascii_lowercase();
-            if !(lower.ends_with(".bmp") || lower.ends_with(".pf6")) {
+            if !(lower.ends_with(".bmp") || lower.ends_with(".el6")) {
                 continue;
             }
             let name = if relative.is_empty() {

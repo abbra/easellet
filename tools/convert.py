@@ -52,8 +52,8 @@ def convert(source, dither=True):
 def frame_from_rgb(data, dither=True):
     """Pack 800x480 RGB bytes into a raw frame.
 
-    Split out from `convert` so `tools/check-pf6-js.py` can hand this and the
-    browser-side `tools/pf6.mjs` the *same* pixels: the resize is Pillow's and
+    Split out from `convert` so `tools/check-el6-js.py` can hand this and the
+    browser-side `tools/el6.mjs` the *same* pixels: the resize is Pillow's and
     the browser's, but everything after it must be identical, byte for byte.
     """
     if len(data) != WIDTH * HEIGHT * 3:
@@ -104,7 +104,7 @@ def spread(pixels, offset, error, factor):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
-    parser.add_argument("output", type=Path, help="raw .pf6 output path")
+    parser.add_argument("output", type=Path, help="raw .el6 output path")
     parser.add_argument(
         "--no-dither",
         action="store_true",

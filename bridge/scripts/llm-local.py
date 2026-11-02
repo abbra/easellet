@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Photoframe bridge LLM backend: a local llama.cpp server, answering in the language asked.
+"""Easellet bridge LLM backend: a local llama.cpp server, answering in the language asked.
 
 The bridge runs `cmd:` backends as a program reading the prompt on stdin and writing
 the answer on stdout, so this is a plain filter in front of `llama-server`'s
@@ -28,7 +28,7 @@ Crane is the alternative, and it does use this host's GPU (Radeon 890M, ROCm):
         -m /home/abokovoy/tmp/small-llms/gguf/MiniCPM5-2B-Q4_K_M.gguf \
         --host 127.0.0.1 --port 8097 --context 4096
 
-    PF_LLM_URL=http://127.0.0.1:8097/v1/chat/completions \
+    EASEL_LLM_URL=http://127.0.0.1:8097/v1/chat/completions \
         ./bridge/build.sh serve -- --stt whisper:small \
         --llm cmd:bridge/scripts/llm-local.py
 
@@ -53,9 +53,9 @@ then reads aloud. Hence a non-reasoning model, and a system prompt that forbids 
 and markdown — the reply is spoken and drawn on a Spectre-6 panel, both of which
 punish structure that a chat window rewards.
 
-Environment: PF_LLM_URL (default http://127.0.0.1:8096/v1/chat/completions),
-PF_LLM_MODEL (discovered from `/v1/models`, then "local"), PF_LLM_SYSTEM,
-PF_LLM_MAX_TOKENS (96), PF_LLM_TEMPERATURE (0.4), PF_LLM_TIMEOUT (60).
+Environment: EASEL_LLM_URL (default http://127.0.0.1:8096/v1/chat/completions),
+EASEL_LLM_MODEL (discovered from `/v1/models`, then "local"), EASEL_LLM_SYSTEM,
+EASEL_LLM_MAX_TOKENS (96), EASEL_LLM_TEMPERATURE (0.4), EASEL_LLM_TIMEOUT (60).
 """
 
 from __future__ import annotations
@@ -74,18 +74,18 @@ except ImportError:  # detection is a hint; the prompt still names every languag
 else:
     DetectorFactory.seed = 0
 
-URL = os.environ.get("PF_LLM_URL", "http://127.0.0.1:8096/v1/chat/completions")
+URL = os.environ.get("EASEL_LLM_URL", "http://127.0.0.1:8096/v1/chat/completions")
 SYSTEM = os.environ.get(
-    "PF_LLM_SYSTEM",
+    "EASEL_LLM_SYSTEM",
     "Ты — голосовой помощник в фоторамке. Отвечай на языке вопроса — русском, "
     "финском, английском или французском — кратко: одно или два предложения. "
     "Если просят перевести или объяснить слово, можешь ответить на другом языке. "
     "Без списков, без markdown, без формул и без пояснений о себе.",
 )
-MODEL = os.environ.get("PF_LLM_MODEL", "")
-MAX_TOKENS = int(os.environ.get("PF_LLM_MAX_TOKENS", "96"))
-TEMPERATURE = float(os.environ.get("PF_LLM_TEMPERATURE", "0.4"))
-TIMEOUT = float(os.environ.get("PF_LLM_TIMEOUT", "60"))
+MODEL = os.environ.get("EASEL_LLM_MODEL", "")
+MAX_TOKENS = int(os.environ.get("EASEL_LLM_MAX_TOKENS", "96"))
+TEMPERATURE = float(os.environ.get("EASEL_LLM_TEMPERATURE", "0.4"))
+TIMEOUT = float(os.environ.get("EASEL_LLM_TIMEOUT", "60"))
 
 LANGUAGES = {
     "ru": "Russian",

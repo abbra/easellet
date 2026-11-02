@@ -1,7 +1,7 @@
 // The bridge's web UI. Plain ES module, no build step, like the frame's page.
 
-// The frame portal's own converter, served by the bridge from tools/pf6.mjs.
-import { WIDTH, HEIGHT, FRAME_BYTES, packImage, drawFrame } from "./pf6.mjs";
+// The frame portal's own converter, served by the bridge from tools/el6.mjs.
+import { WIDTH, HEIGHT, FRAME_BYTES, packImage, drawFrame } from "./el6.mjs";
 
 const $ = (id) => document.getElementById(id);
 
@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 function post(url, body) {
   return fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Photoframe": "1" },
+    headers: { "Content-Type": "application/json", "X-Easellet": "1" },
     body: JSON.stringify(body),
   });
 }
@@ -19,7 +19,7 @@ function post(url, body) {
 function postBytes(url, bytes) {
   return fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream", "X-Photoframe": "1" },
+    headers: { "Content-Type": "application/octet-stream", "X-Easellet": "1" },
     body: bytes ?? new Uint8Array(0),
   });
 }
@@ -266,7 +266,7 @@ function buildCard(initial) {
     const deleteIt = text("button", "Удалить", "danger");
     // The frame refuses deletion outside its writable directory anyway; the
     // button is only offered where it would succeed.
-    deleteIt.hidden = !image.name.toUpperCase().startsWith("PFTEST/");
+    deleteIt.hidden = !image.name.toUpperCase().startsWith("EASELTEST/");
     line.append(text("span", name), showIt, deleteIt);
     figure.append(small, line);
     const query = `path=${encodeURIComponent(image.name)}`;

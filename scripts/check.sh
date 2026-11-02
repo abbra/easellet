@@ -37,13 +37,13 @@ rustc --edition 2024 --test .tools/panel-harness.rs -o .tools/panel-tests
 # or the same picture would look different depending on how it arrived. Both
 # halves are pure, so this needs no browser - just Node and Pillow.
 if command -v node >/dev/null && python3 -c "import PIL" 2>/dev/null; then
-    python3 tools/check-pf6-js.py >/dev/null || {
-        echo "pf6-js: converter disagreement (run tools/check-pf6-js.py)"
+    python3 tools/check-el6-js.py >/dev/null || {
+        echo "el6-js: converter disagreement (run tools/check-el6-js.py)"
         exit 1
     }
-    echo "pf6-js: byte-identical"
+    echo "el6-js: byte-identical"
 else
-    echo "pf6-js: SKIPPED (needs node and Pillow)"
+    echo "el6-js: SKIPPED (needs node and Pillow)"
 fi
 # The page's own drop resolution, run against the function in the page: a drag
 # from another tab carries a URL and no file, which is exactly the case a person
@@ -73,9 +73,9 @@ for profile in dev release; do
     cargo build --locked --profile "$profile"
     .venv-tools/bin/python -m esptool --chip esp32s3 elf2image \
         --flash-mode dio --flash-freq 40m --flash-size 16MB \
-        --output "target/xtensa-esp32s3-espidf/$directory/photoframe.bin" \
-        "target/xtensa-esp32s3-espidf/$directory/photoframe"
-    image="target/xtensa-esp32s3-espidf/$directory/photoframe.bin"
+        --output "target/xtensa-esp32s3-espidf/$directory/easellet.bin" \
+        "target/xtensa-esp32s3-espidf/$directory/easellet"
+    image="target/xtensa-esp32s3-espidf/$directory/easellet.bin"
     size=$(stat -c %s "$image")
     headroom=$((FACTORY_BYTES - size))
     # The size is printed on every build because a partition that is one feature

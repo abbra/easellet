@@ -1,4 +1,4 @@
-# photoframe-bridge
+# easellet-bridge
 
 The LAN service the photo frame talks to for speech. It exists so the firmware does
 **not** need a cloud API key, TLS, a certificate bundle, base64 or a JSON parser: the
@@ -37,10 +37,10 @@ frame says nothing and goes back to listening:
 |---|---|
 | fewer than 2 letters | Whisper's answer to a hum: `" ."`, a single `"У"` |
 | a whole-transcript filler | `"Mm-hmm"`, `"Thank you."`, `"No."` — a noisy capture that then became an English "I'm here to help." |
-| no wake stem (`--wake` / `PF_WAKE`) | `"Мама, дай мне сок."` — correct recognition of a conversation the frame was not part of |
+| no wake stem (`--wake` / `EASEL_WAKE`) | `"Мама, дай мне сок."` — correct recognition of a conversation the frame was not part of |
 
 The wake stems are compared as lowercase substrings, so `рамк` matches «рамка»,
-«рамку» and «рамке», and `frame` matches the English name. Leaving `PF_WAKE` unset
+«рамку» and «рамке», and `frame` matches the English name. Leaving `EASEL_WAKE` unset
 keeps the old behaviour: every transcript is addressed. It cannot live in the
 firmware, where it would need a flash per word — and it cannot be done by loudness at
 all, because the room and a person speaking to the frame measure the same.
@@ -65,7 +65,7 @@ needs no base64 to send it.
 
 ### Keeping the audio the device sent
 
-`PF_BRIDGE_DUMP=<dir>` writes every `/stt` body to `<dir>/stt-<unix-ms>.ulaw` and logs
+`EASEL_BRIDGE_DUMP=<dir>` writes every `/stt` body to `<dir>/stt-<unix-ms>.ulaw` and logs
 the path. Without it a failing microphone and a failing recogniser look identical: the
 response only ever says `ERR stt: whisper heard nothing`.
 

@@ -9,7 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
-from photoframe_plugin import Plugin  # noqa: E402
+from easellet_plugin import Plugin  # noqa: E402
 
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
@@ -36,7 +36,7 @@ def icon(code):
 
 
 def fetch(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "photoframe-bridge"})
+    request = urllib.request.Request(url, headers={"User-Agent": "easellet-bridge"})
     with urllib.request.urlopen(request, timeout=10) as answer:
         return json.load(answer)
 

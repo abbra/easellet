@@ -203,7 +203,7 @@ fn credentials(line: &[u8]) -> Option<(String, String)> {
 /// What the idle watcher waits for.
 ///
 /// Defined by the settings module because the same three names are written to
-/// `PFTEST/CONFIG.TXT`, and one enum means the console and the file can never
+/// `EASELTEST/CONFIG.TXT`, and one enum means the console and the file can never
 /// disagree about what is a valid mode.
 pub use crate::config::IdleMode;
 
@@ -459,7 +459,7 @@ mod tests {
     #[test]
     fn commands_and_crlf() {
         assert_eq!(
-            feed("help\r\ninfo\nbuttons\nled on\nled off\nsensor\nrtc\npmu\nsd\nsd ls 01_SYS~1\ndisplay bars\ndisplay clear red\ndisplay bmp 01_SYS~1/00_init.bmp\ndisplay raw test.pf6\ndisplay sleep\ndisplay status\naudio status\naudio regs\naudio level 500\naudio rec 2\naudio tone\naudio tone 250\naudio loop\naudio loop 1000\naudio hex\naudio volume\naudio volume -6\naudio volume +3.5\naudio gain 30\naudio gain 0\naudio play PFTEST/REC.WAV\naudio off\nwifi scan\nwifi status\nwifi time\nwifi time 192.168.1.1\nwifi off\nwifi auto on\nwifi auto off\nwifi join home secret123\nwifi join\nconfig\nconfig save\nai\nai selftest\nai url http://192.168.50.93:8095\nai key photoframe-lan-2026\nai stt 3000\nai listen\nai listen 4000\nai talk\nai talk 6000\nai ask сколько зайцев пляшет вокруг елки\nai idle off\nai idle key\nai idle voice\nai threshold 20\nai threshold 600\nai threshold 4000\n".as_bytes()),
+            feed("help\r\ninfo\nbuttons\nled on\nled off\nsensor\nrtc\npmu\nsd\nsd ls 01_SYS~1\ndisplay bars\ndisplay clear red\ndisplay bmp 01_SYS~1/00_init.bmp\ndisplay raw test.el6\ndisplay sleep\ndisplay status\naudio status\naudio regs\naudio level 500\naudio rec 2\naudio tone\naudio tone 250\naudio loop\naudio loop 1000\naudio hex\naudio volume\naudio volume -6\naudio volume +3.5\naudio gain 30\naudio gain 0\naudio play EASELTEST/REC.WAV\naudio off\nwifi scan\nwifi status\nwifi time\nwifi time 192.168.1.1\nwifi off\nwifi auto on\nwifi auto off\nwifi join home secret123\nwifi join\nconfig\nconfig save\nai\nai selftest\nai url http://192.168.50.93:8095\nai key easellet-lan-2026\nai stt 3000\nai listen\nai listen 4000\nai talk\nai talk 6000\nai ask сколько зайцев пляшет вокруг елки\nai idle off\nai idle key\nai idle voice\nai threshold 20\nai threshold 600\nai threshold 4000\n".as_bytes()),
             [
                 Command::Help,
                 Command::Info,
@@ -474,7 +474,7 @@ mod tests {
                 Command::DisplayBars,
                 Command::DisplayClear(RED),
                 Command::DisplayBmp("01_SYS~1/00_init.bmp".to_owned()),
-                Command::DisplayRaw("test.pf6".to_owned()),
+                Command::DisplayRaw("test.el6".to_owned()),
                 Command::DisplaySleep,
                 Command::DisplayStatus,
                 Command::AudioStatus,
@@ -491,7 +491,7 @@ mod tests {
                 Command::AudioVolume(35),
                 Command::AudioGain(300),
                 Command::AudioGain(0),
-                Command::AudioPlay("PFTEST/REC.WAV".to_owned()),
+                Command::AudioPlay("EASELTEST/REC.WAV".to_owned()),
                 Command::AudioOff,
                 Command::WifiScan,
                 Command::WifiStatus,
@@ -513,7 +513,7 @@ mod tests {
                 Command::AiStatus,
                 Command::AiSelftest,
                 Command::AiUrl("http://192.168.50.93:8095".to_owned()),
-                Command::AiKey("photoframe-lan-2026".to_owned()),
+                Command::AiKey("easellet-lan-2026".to_owned()),
                 Command::AiStt(3_000),
                 Command::AiListen(3_000),
                 Command::AiListen(4_000),
@@ -546,9 +546,9 @@ mod tests {
             }]
         );
         assert_eq!(
-            feed(b"gallery start PFTEST\n"),
+            feed(b"gallery start EASELTEST\n"),
             [Command::GalleryStart {
-                dir: Some("PFTEST".to_owned()),
+                dir: Some("EASELTEST".to_owned()),
                 seconds: None
             }]
         );
@@ -562,16 +562,16 @@ mod tests {
             }]
         );
         assert_eq!(
-            feed(b"gallery start PFTEST/GALLERY 600\n"),
+            feed(b"gallery start EASELTEST/GALLERY 600\n"),
             [Command::GalleryStart {
-                dir: Some("PFTEST/GALLERY".to_owned()),
+                dir: Some("EASELTEST/GALLERY".to_owned()),
                 seconds: Some(600)
             }]
         );
         // Absolute paths and backslashes are refused by the same rule the image
         // loader applies, so neither can escape the card root.
         assert_eq!(feed(b"gallery start /etc 60\n"), [Command::Unknown]);
-        assert_eq!(feed(b"gallery start ..\\PFTEST 60\n"), [Command::Unknown]);
+        assert_eq!(feed(b"gallery start ..\\EASELTEST 60\n"), [Command::Unknown]);
     }
 
     #[test]
@@ -606,8 +606,8 @@ mod tests {
         // The empty path is the root: `storage::list` maps `None` onto it.
         assert_eq!(feed(b"sd ls\n"), [Command::SdList(String::new())]);
         assert_eq!(
-            feed(b"sd ls PFTEST\n"),
-            [Command::SdList("PFTEST".to_owned())]
+            feed(b"sd ls EASELTEST\n"),
+            [Command::SdList("EASELTEST".to_owned())]
         );
     }
 

@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
-from photoframe_plugin import Plugin  # noqa: E402
+from easellet_plugin import Plugin  # noqa: E402
 
 MAX_IMAGE = 20 * 1024 * 1024
 
@@ -17,7 +17,7 @@ request = {"prompt": plugin.params["prompt"], "n": 1, "size": plugin.params.get(
            "response_format": "b64_json"}
 if plugin.params.get("model"):
     request["model"] = plugin.params["model"]
-headers = {"Content-Type": "application/json", "User-Agent": "photoframe-bridge"}
+headers = {"Content-Type": "application/json", "User-Agent": "easellet-bridge"}
 if plugin.params.get("api_key"):
     headers["Authorization"] = f"Bearer {plugin.params['api_key']}"
 try:

@@ -33,7 +33,7 @@ pub trait Stt: Send {
 pub trait Llm: Send {
     fn reply(&mut self, prompt: &str, model: &str) -> Result<String, String>;
 
-    /// Extra environment for a command backend (`PF_LLM_SYSTEM`, `PF_LLM_URL`
+    /// Extra environment for a command backend (`EASEL_LLM_SYSTEM`, `EASEL_LLM_URL`
     /// from the settings); other backends have nothing to configure.
     fn set_env(&mut self, _env: &[(String, String)]) {}
 }

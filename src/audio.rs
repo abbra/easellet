@@ -77,8 +77,8 @@ const RECORD_PEAK_DB: f32 = -6.0;
 // Sized for speech across a room: the microphones lose about 6 dB per doubling
 // of distance, and a take from 1 m lands ~12 dB below the near-field case.
 const RECORD_MAX_GAIN_DB: f32 = 24.0;
-const TEST_DIR: &str = "PFTEST";
-const TEST_WAV: &str = "PFTEST/REC.WAV";
+const TEST_DIR: &str = "EASELTEST";
+const TEST_WAV: &str = "EASELTEST/REC.WAV";
 
 const ES8311_ADDR: u8 = 0x18;
 const ES7210_ADDR: u8 = 0x40;
