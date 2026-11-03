@@ -100,7 +100,7 @@ with `help`.
 | `display raw <file>` | Loads an exact 192000-byte host-converted `.el6` frame from `/sdcard` and refreshes the panel. |
 | `display clear <color>` | Fills the panel with one of the six colors. |
 | `display sleep` | Puts the panel into deep sleep. The next draw runs the initialization again. |
-| `display status` | Shows the awake flag and the BUSY pin state. |
+| `display status` | Shows the awake flag and whether the panel is ready for another command (its BUSY line reads high between refreshes). |
 | `audio status` | Shows the codec pair, rate/format, PA state, live volume and mic gain, last capture stats and the audio rail report. |
 | `audio regs` | Shows 16 ES8311 and 14 ES7210 registers on `/dev/ttyACM0`. |
 | `audio tone [ms]` | Plays a 440 Hz stereo tone through the speaker for 100..2000 ms. |

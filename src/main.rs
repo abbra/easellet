@@ -1546,9 +1546,12 @@ fn run() -> Result<(), EspError> {
                     let reply = painter
                         .with_ready(|display, _| {
                             format!(
-                                "OK display_awake={} busy={}\r\n",
+                                // `busy=true` used to mean the BUSY line was
+                                // high, which is the panel being ready: the
+                                // label said the opposite of the state.
+                                "OK display_awake={} ready={}\r\n",
                                 display.awake(),
-                                display.busy()
+                                display.ready()
                             )
                         })
                         .unwrap_or_else(|error| error);

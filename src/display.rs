@@ -74,7 +74,9 @@ impl<'d> Display<'d> {
         self.awake
     }
 
-    pub fn busy(&self) -> bool {
+    /// Whether the panel can take another command: its BUSY line reads high
+    /// between refreshes, which is what `wait_busy` polls for.
+    pub fn ready(&self) -> bool {
         self.busy.is_high()
     }
 
