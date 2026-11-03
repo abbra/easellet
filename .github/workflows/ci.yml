@@ -1,0 +1,252 @@
+# The gate: what every pull request and every push to main has to pass.
+#
+# Every job runs in the Fedora image built from the `Containerfile` at the root of
+# the repository. GitHub-hosted runners are Ubuntu, Windows or macOS, so the image
+# is how the toolchain stays the one this project builds with: the host crates
+# link against Fedora's alsa-lib and glibc, and the firmware toolchain is Fedora's
+# cargo plus Xtensa.
+#
+# The image tag is the first twelve hex digits of the hash of its inputs:
+#
+#   cat Containerfile tools/requirements.txt tools/package-lock.json \
+#       | sha256sum | cut -c1-12
+#
+# Changing any of those three means changing two lines here (CI_IMAGE and the
+# `container: image:` of each job) and publishing the image from main; the `image`
+# job refuses a tag that does not match its own inputs, so a forgotten bump is a
+# red build with the right value in the message.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep this equal to the `container: image:` below and to the hash of the inputs.
+  CI_IMAGE: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      firmware: ${{ steps.filter.outputs.firmware }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Decide what this change can break
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "07fa785ca23c07fa785ca23c07fa785ca23c0000" ] \
+             || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            files="$(git ls-files)"
+          else
+            files="$(git diff --name-only "$base" HEAD)"
+          fi
+          echo "$files" | sed -n '1,60p'
+          # Everything except pure documentation and the web pages: those are the
+          # `host` and `web` jobs' business, and the firmware build costs twenty
+          # minutes of toolchain and IDF.
+          if echo "$files" | grep -Eq '^(src/|Cargo\.|sdkconfig|partitions\.csv|scripts/|tools/|opendisplay-proto/|bridge/|\.cargo/|rust-toolchain\.toml|Containerfile|\.github/)'; then
+            echo "firmware=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "firmware=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        name: Check the image tag against the image's inputs
+        run: |
+          set -euo pipefail
+          hash="$(cat Containerfile tools/requirements.txt tools/package-lock.json \
+                  | sha256sum | cut -c1-12)"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/ci:$hash"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "inputs hash: $hash"
+          if [ "$image" != "${CI_IMAGE,,}" ]; then
+            echo "::error::the Containerfile, tools/requirements.txt or tools/package-lock.json changed: set CI_IMAGE and every container image to $image"
+            exit 1
+          fi
+      - name: Pull the image, or build and publish it
+        run: |
+          set -euo pipefail
+          if docker pull "$CI_IMAGE"; then
+            echo "already published"
+            exit 0
+          fi
+          docker build --tag "$CI_IMAGE" .
+          # A pull request from a fork has no packages: write. Its build proves
+          # the image still builds; the tag itself has to come from main.
+          if [ "${{ github.event_name }}" = push ] \
+             || [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
+            echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            docker push "$CI_IMAGE"
+          else
+            echo "::warning::built but not published: a fork cannot push to the registry, so the tag must exist from main"
+          fi
+
+  host:
+    needs: [image]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The two host crates
+        run: |
+          ./bridge/build.sh test
+          ./bridge/build.sh clippy
+          ./opendisplay-proto/build.sh test
+          ./opendisplay-proto/build.sh clippy
+      - name: The upstream Python client reads what the crate wrote
+        run: |
+          set -euo pipefail
+          file=opendisplay-proto/tests/fixtures/py-opendisplay.txt
+          url="$(sed -n 's/^url //p' "$file")"
+          commit="$(sed -n 's/^commit //p' "$file")"
+          git clone --quiet --filter=blob:none "$url" .tools/py-opendisplay
+          git -C .tools/py-opendisplay checkout --quiet "$commit"
+          python3 -m venv .tools/venv-opendisplay
+          .tools/venv-opendisplay/bin/pip install --quiet -e ".tools/py-opendisplay[wifi]"
+          ./opendisplay-proto/build.sh test
+
+  web:
+    needs: [image]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The converters agree, in both languages
+        run: |
+          python3 tools/check-el6-js.py
+          node tools/check-portal-js.mjs
+      - name: The portal works in a browser
+        run: |
+          # The image carries the driver at /opt/easellet-tools; ESM does not read
+          # NODE_PATH, so it is linked where `node` looks.
+          ln -s /opt/easellet-tools/node_modules tools/node_modules
+          EASEL_CHROMIUM=/usr/bin/chromium-browser node tools/run-portal-harness.mjs
+      - name: The documentation
+        run: python3 tools/check-docs.py
+
+  firmware:
+    needs: [image, changes]
+    if: needs.changes.outputs.firmware == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      # The toolchain (1.6 GB) and IDF with its tools (4.5 GB) are the reason this
+      # job has caches at all. Both live in the workspace, because that is where
+      # `scripts/env.sh` and `.cargo/config.toml` put them.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .tools
+            .embuild
+          key: esp-${{ hashFiles('.github/esp-toolchain.txt', '.cargo/config.toml', 'Cargo.lock') }}
+      - uses: actions/cache@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: target
+          key: target-${{ hashFiles('Cargo.lock', '.github/esp-toolchain.txt') }}-${{ github.sha }}
+          restore-keys: |
+            target-${{ hashFiles('Cargo.lock', '.github/esp-toolchain.txt') }}-
+      - name: The toolchain
+        run: |
+          set -euo pipefail
+          source scripts/env.sh
+          # rustup's shims have to exist in the project's cargo home; Fedora's
+          # cargo is what builds the host crates and stays untouched.
+          rustup-init -y --no-modify-path --default-toolchain none
+          espup install --targets esp32s3 --export-file .tools/export-esp.sh
+          # `scripts/check.sh` runs esptool from `.venv-tools`; the image's Python
+          # already has esptool and Pillow, so the venv only has to see them.
+          python3 -m venv --system-site-packages .venv-tools
+          cargo --version
+          rustc --version
+      - name: The whole local gate
+        run: |
+          source scripts/env.sh
+          bash scripts/check.sh
+      - name: The image fits the slot the frame is flashed with
+        run: |
+          set -euo pipefail
+          image=target/xtensa-esp32s3-espidf/release/easellet.bin
+          read -r slot slots <<< "$(python3 tools/partitions.py)"
+          bytes="$(stat -c %s "$image")"
+          echo "image $bytes bytes in a $slot-byte slot ($slots slots)"
+          test "$slots" -ge 2
+          test "$bytes" -le "$slot"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: easellet-dev
+          path: |
+            target/xtensa-esp32s3-espidf/release/easellet.bin
+            target/partition-table.bin
+
+  smoke:
+    needs: [image, changes]
+    if: needs.changes.outputs.firmware == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the real bridge and ask it what it serves
+        run: |
+          ./bridge/build.sh test
+          python3 tools/bridge-smoke.py
+
+  version:
+    needs: [image, changes]
+    if: needs.changes.outputs.firmware == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: One version, everywhere
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in
+            refs/tags/v*) python3 tools/check-version.py "${GITHUB_REF#refs/tags/}" ;;
+            *) python3 tools/check-version.py ;;
+          esac
