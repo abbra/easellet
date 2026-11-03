@@ -63,6 +63,14 @@ fn nearest(rgb: [i32; 3]) -> (u8, [u8; 3]) {
 /// the same order with the same factors.
 pub fn frame_from_rgb(rgb: &[u8], dither: bool) -> Vec<u8> {
     assert_eq!(rgb.len(), WIDTH * HEIGHT * 3, "need {WIDTH}x{HEIGHT} RGB");
+    pack(&palette_indices(rgb, WIDTH, HEIGHT, dither))
+}
+
+/// RGB (viewer order, `width` x `height`) to the palette index of each pixel.
+/// The dithering error never leaves the rectangle, so a picture tile cannot
+/// speckle a card beside it.
+fn palette_indices(rgb: &[u8], width: usize, height: usize, dither: bool) -> Vec<u8> {
+    assert_eq!(rgb.len(), width * height * 3, "need {width}x{height} RGB");
     let mut pixels: Vec<[f64; 3]> = rgb
         .as_chunks::<3>()
         .0
@@ -75,15 +83,15 @@ pub fn frame_from_rgb(rgb: &[u8], dither: bool) -> Vec<u8> {
             ]
         })
         .collect();
-    let mut indices = vec![0u8; WIDTH * HEIGHT];
+    let mut indices = vec![0u8; width * height];
     let spread = |pixels: &mut [[f64; 3]], offset: usize, error: [f64; 3], factor: f64| {
         for channel in 0..3 {
             pixels[offset][channel] += error[channel] * factor;
         }
     };
-    for y in 0..HEIGHT {
-        for x in 0..WIDTH {
-            let offset = y * WIDTH + x;
+    for y in 0..height {
+        for x in 0..width {
+            let offset = y * width + x;
             let old = pixels[offset];
             let current = old.map(|channel| channel.round_ties_even().clamp(0.0, 255.0) as i32);
             let (index, target) = nearest(current);
@@ -92,22 +100,22 @@ pub fn frame_from_rgb(rgb: &[u8], dither: bool) -> Vec<u8> {
                 continue;
             }
             let error = [0, 1, 2].map(|channel| old[channel] - f64::from(target[channel]));
-            if x + 1 < WIDTH {
+            if x + 1 < width {
                 spread(&mut pixels, offset + 1, error, 7.0 / 16.0);
             }
-            if y + 1 < HEIGHT {
-                let row = offset + WIDTH;
+            if y + 1 < height {
+                let row = offset + width;
                 if x > 0 {
                     spread(&mut pixels, row - 1, error, 3.0 / 16.0);
                 }
                 spread(&mut pixels, row, error, 5.0 / 16.0);
-                if x + 1 < WIDTH {
+                if x + 1 < width {
                     spread(&mut pixels, row + 1, error, 1.0 / 16.0);
                 }
             }
         }
     }
-    pack(&indices)
+    indices
 }
 
 /// Panel indices, viewer order, to the panel's bytes: rotated 180°, two pixels
@@ -214,19 +222,70 @@ pub enum Face {
 /// A viewer-order RGB canvas the size of the panel.
 pub struct Canvas {
     pub rgb: Vec<u8>,
+    /// When set, nothing is drawn outside this rectangle.
+    clip: Option<Rect>,
 }
 
 impl Canvas {
     pub fn new(background: [u8; 3]) -> Self {
         Self {
             rgb: background.repeat(WIDTH * HEIGHT),
+            clip: None,
+        }
+    }
+
+    /// Keep every later drawing inside `rect`.
+    pub fn clip(&mut self, rect: Rect) {
+        self.clip = Some(rect);
+    }
+
+    pub fn unclip(&mut self) {
+        self.clip = None;
+    }
+
+    fn inside(&self, x: i32, y: i32) -> bool {
+        if !(0..WIDTH as i32).contains(&x) || !(0..HEIGHT as i32).contains(&y) {
+            return false;
+        }
+        match self.clip {
+            None => true,
+            Some(rect) => {
+                x >= rect.x as i32
+                    && y >= rect.y as i32
+                    && x < rect.right() as i32
+                    && y < rect.bottom() as i32
+            }
         }
     }
 
     pub fn fill(&mut self, x: usize, y: usize, width: usize, height: usize, colour: [u8; 3]) {
-        for row in y..(y + height).min(HEIGHT) {
-            for column in x..(x + width).min(WIDTH) {
+        let mut x0 = x.min(WIDTH);
+        let mut y0 = y.min(HEIGHT);
+        let mut x1 = x.saturating_add(width).min(WIDTH);
+        let mut y1 = y.saturating_add(height).min(HEIGHT);
+        if let Some(rect) = self.clip {
+            x0 = x0.max(rect.x);
+            y0 = y0.max(rect.y);
+            x1 = x1.min(rect.right());
+            y1 = y1.min(rect.bottom());
+        }
+        for row in y0..y1 {
+            for column in x0..x1 {
                 self.rgb[(row * WIDTH + column) * 3..][..3].copy_from_slice(&colour);
+            }
+        }
+    }
+
+    /// Copy palette indices (viewer order, `width` x `height`) into the canvas.
+    fn blit_indices(&mut self, x: usize, y: usize, width: usize, height: usize, indices: &[u8]) {
+        for row in 0..height {
+            for column in 0..width {
+                let index = indices[row * width + column];
+                let colour = PALETTE
+                    .iter()
+                    .find(|entry| entry.0 == index)
+                    .map_or(BLACK, |entry| entry.1);
+                self.put((x + column) as i32, (y + row) as i32, colour);
             }
         }
     }
@@ -267,7 +326,7 @@ impl Canvas {
                 }
                 let px = bounds.min.x as i32 + gx as i32;
                 let py = bounds.min.y as i32 + gy as i32;
-                if (0..WIDTH as i32).contains(&px) && (0..HEIGHT as i32).contains(&py) {
+                if self.inside(px, py) {
                     let at = (py as usize * WIDTH + px as usize) * 3;
                     self.rgb[at..at + 3].copy_from_slice(&colour);
                 }
@@ -750,9 +809,301 @@ fn forecast(canvas: &mut Canvas, fonts: &Fonts, days: &[Day], note: &str) {
     }
 }
 
+/// A rectangle on the panel, in viewer-order pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl Rect {
+    pub const fn new(x: usize, y: usize, width: usize, height: usize) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    pub const fn right(self) -> usize {
+        self.x + self.width
+    }
+
+    pub const fn bottom(self) -> usize {
+        self.y + self.height
+    }
+}
+
+/// Draw `card` inside `rect`: the same content as a full-panel card, in a
+/// compact header and body that fit the smaller space. `stale` marks a tile
+/// whose content is older than its job wants.
+pub fn render_tile(canvas: &mut Canvas, rect: Rect, card: &Card, fonts: &Fonts, stale: bool) {
+    if rect.width < 16 || rect.height < 16 {
+        return;
+    }
+    canvas.clip(rect);
+    canvas.fill(rect.x, rect.y, rect.width, rect.height, WHITE);
+    let (title, accent) = match card {
+        Card::Notice { title, accent, .. }
+        | Card::List { title, accent, .. }
+        | Card::Forecast { title, accent, .. } => (title, *accent),
+    };
+    let margin = (rect.width as f32 * 0.04).clamp(10.0, 20.0);
+    let title_size: f32 = if rect.height >= 260 {
+        26.0
+    } else if rect.height >= 190 {
+        24.0
+    } else {
+        22.0
+    };
+    let header = (title_size + 12.0).min(rect.height as f32);
+    let mut body_top = rect.y as f32 + 4.0;
+    if !title.is_empty() {
+        let square = ((title_size * 0.55).round() as usize).max(8);
+        let square_left = rect.x + margin as usize;
+        let square_top = (rect.y as f32 + (header - square as f32) * 0.5) as usize;
+        canvas.fill(square_left, square_top, square, square, accent.rgb());
+        if stale {
+            canvas.fill(
+                square_left + 2,
+                square_top + 2,
+                square.saturating_sub(4),
+                square.saturating_sub(4),
+                WHITE,
+            );
+        }
+        let text_x = square_left as f32 + square as f32 + 10.0;
+        let room = (rect.right() as f32 - margin - text_x).max(20.0);
+        let line = one_line(fonts, Face::Bold, title_size, title, room);
+        canvas.text(
+            fonts,
+            (Face::Bold, title_size),
+            (text_x, rect.y as f32 + (header + title_size) * 0.5 - 2.0),
+            &line,
+            BLACK,
+        );
+        body_top = rect.y as f32 + header;
+    }
+    let body_height = rect.bottom() as f32 - body_top;
+    let max = (rect.width as f32 - 2.0 * margin).max(20.0);
+    match card {
+        Card::Notice { body, .. } => {
+            let size = (body_height * 0.11).clamp(17.0, 28.0);
+            let leading = size * 1.3;
+            let rows = (((body_height - margin) / leading).floor() as usize).max(1);
+            let lines = fit_rows(
+                fonts,
+                Face::Regular,
+                size,
+                wrap(fonts, Face::Regular, size, body, max),
+                rows,
+                max,
+            );
+            for (row, line) in lines.iter().enumerate() {
+                canvas.text(
+                    fonts,
+                    (Face::Regular, size),
+                    (
+                        rect.x as f32 + margin,
+                        body_top + margin + size + row as f32 * leading,
+                    ),
+                    line,
+                    BLACK,
+                );
+            }
+        }
+        Card::List { items, .. } => {
+            let row_height: f32 = if rect.height >= 320 {
+                46.0
+            } else if rect.height >= 190 {
+                40.0
+            } else {
+                34.0
+            };
+            let size = (row_height * 0.56).clamp(16.0, 28.0);
+            let rows = (((body_height - 4.0) / row_height).floor() as usize).max(1);
+            let shown = if items.len() > rows {
+                rows.saturating_sub(1).max(1)
+            } else {
+                items.len()
+            };
+            let square = ((row_height * 0.5).round() as usize).max(10);
+            let indented = items.iter().any(|item| item.status.is_some());
+            for (row, item) in items.iter().take(shown).enumerate() {
+                let top = body_top + 4.0 + row as f32 * row_height;
+                let mut x = rect.x as f32 + margin;
+                if let Some(status) = item.status {
+                    let colour = match status {
+                        Status::Ok => GREEN,
+                        Status::Fail => RED,
+                        Status::Warn => YELLOW,
+                        Status::Info => BLUE,
+                    };
+                    let square_left = x as usize;
+                    let square_top = (top + (row_height - square as f32) * 0.5) as usize;
+                    canvas.fill(square_left, square_top, square, square, BLACK);
+                    canvas.fill(
+                        square_left + 2,
+                        square_top + 2,
+                        square.saturating_sub(4),
+                        square.saturating_sub(4),
+                        colour,
+                    );
+                    x += square as f32 + 10.0;
+                } else if indented {
+                    x += square as f32 + 10.0;
+                }
+                let tally_size = size * 0.85;
+                let tallies = item
+                    .counts
+                    .map_or(0.0, |counts| tallies_width(fonts, tally_size, counts));
+                let room = (rect.right() as f32 - margin - x - tallies).max(20.0);
+                let line = one_line(fonts, Face::Regular, size, &item.text, room);
+                canvas.text(
+                    fonts,
+                    (Face::Regular, size),
+                    (x, top + row_height * 0.68),
+                    &line,
+                    BLACK,
+                );
+                if let Some(counts) = item.counts {
+                    let mut tx = rect.right() as f32 - margin - tallies + 14.0;
+                    for (colour, count) in counts.tallies() {
+                        let square_top = (top + (row_height - TALLY_SQUARE) * 0.5) as usize;
+                        canvas.fill(
+                            tx as usize,
+                            square_top,
+                            TALLY_SQUARE as usize,
+                            TALLY_SQUARE as usize,
+                            BLACK,
+                        );
+                        canvas.fill(
+                            tx as usize + 2,
+                            square_top + 2,
+                            TALLY_SQUARE as usize - 4,
+                            TALLY_SQUARE as usize - 4,
+                            colour,
+                        );
+                        tx += TALLY_SQUARE + 6.0;
+                        let width = canvas.text(
+                            fonts,
+                            (Face::Regular, tally_size),
+                            (tx, top + row_height * 0.68),
+                            &count.to_string(),
+                            BLACK,
+                        );
+                        tx += width + 14.0;
+                    }
+                }
+                canvas.fill(
+                    rect.x + margin as usize,
+                    (top + row_height - 1.0) as usize,
+                    rect.width.saturating_sub(2 * margin as usize),
+                    1,
+                    BLACK,
+                );
+            }
+            if shown < items.len() {
+                let top = body_top + 4.0 + shown as f32 * row_height;
+                canvas.text(
+                    fonts,
+                    (Face::Regular, size),
+                    (rect.x as f32 + margin, top + row_height * 0.68),
+                    &format!("+{}", items.len() - shown),
+                    BLUE,
+                );
+            }
+        }
+        Card::Forecast { days, note, .. } => {
+            let max_days = ((max / 118.0).floor() as usize).clamp(1, 7);
+            let shown = days.len().min(max_days);
+            if shown == 0 {
+                canvas.unclip();
+                return;
+            }
+            let column = max / shown as f32;
+            let label_size = (column * 0.20).clamp(15.0, 28.0);
+            let icon = (column * 0.32).clamp(22.0, 44.0);
+            let high_size = icon * 0.85;
+            let low_size = icon * 0.62;
+            let note_room = if note.is_empty() { 0.0 } else { 20.0 };
+            let usable = (body_height - note_room).max(40.0);
+            for (index, day) in days.iter().take(shown).enumerate() {
+                let centre = rect.x as f32 + margin + column * (index as f32 + 0.5);
+                canvas.centred(
+                    fonts,
+                    (Face::Bold, label_size),
+                    (centre, body_top + label_size + 4.0),
+                    &day.label,
+                    BLACK,
+                );
+                canvas.icon(day.icon, centre, body_top + usable * 0.36, icon);
+                if let Some(high) = day.high {
+                    canvas.centred(
+                        fonts,
+                        (Face::Bold, high_size),
+                        (centre, body_top + usable * 0.70),
+                        &degrees(high),
+                        RED,
+                    );
+                }
+                if let Some(low) = day.low {
+                    canvas.centred(
+                        fonts,
+                        (Face::Regular, low_size),
+                        (centre, body_top + usable * 0.86),
+                        &degrees(low),
+                        BLUE,
+                    );
+                }
+                if let Some(precip) = day.precip_mm.filter(|mm| *mm >= 0.1)
+                    && usable > 150.0
+                {
+                    let size = (low_size * 0.8).clamp(12.0, 20.0);
+                    canvas.centred(
+                        fonts,
+                        (Face::Regular, size),
+                        (centre, body_top + usable * 0.98),
+                        &format!("{precip:.1} мм"),
+                        BLUE,
+                    );
+                }
+            }
+            if !note.is_empty() {
+                let size = 16.0;
+                let line = one_line(fonts, Face::Regular, size, note, max);
+                canvas.text(
+                    fonts,
+                    (Face::Regular, size),
+                    (rect.x as f32 + margin, rect.bottom() as f32 - 6.0),
+                    &line,
+                    BLACK,
+                );
+            }
+        }
+    }
+    canvas.unclip();
+}
+
+/// Decode a picture and draw it inside `rect`, dithered only within the tile.
+pub fn draw_picture(canvas: &mut Canvas, rect: Rect, bytes: &[u8], fit: Fit) -> Result<(), String> {
+    if rect.width < 8 || rect.height < 8 {
+        return Ok(());
+    }
+    let rgb = picture_rgb(bytes, fit, rect.width, rect.height)?;
+    let indices = palette_indices(&rgb, rect.width, rect.height, true);
+    canvas.clip(rect);
+    canvas.blit_indices(rect.x, rect.y, rect.width, rect.height, &indices);
+    canvas.unclip();
+    Ok(())
+}
+
 impl Canvas {
     fn put(&mut self, x: i32, y: i32, colour: [u8; 3]) {
-        if (0..WIDTH as i32).contains(&x) && (0..HEIGHT as i32).contains(&y) {
+        if self.inside(x, y) {
             let at = (y as usize * WIDTH + x as usize) * 3;
             self.rgb[at..at + 3].copy_from_slice(&colour);
         }
@@ -915,21 +1266,30 @@ pub enum Fit {
 /// still fine, a decompression bomb is not.
 const MAX_SOURCE_PIXELS: u64 = 50_000_000;
 
-/// A PNG or JPEG, fitted to the panel and dithered.
-pub fn photo_frame(bytes: &[u8], fit: Fit) -> Result<Vec<u8>, String> {
+/// A PNG or JPEG, fitted to `width` x `height` in viewer order, not yet
+/// quantised.
+fn picture_rgb(
+    bytes: &[u8],
+    fit: Fit,
+    target_width: usize,
+    target_height: usize,
+) -> Result<Vec<u8>, String> {
     let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|error| error.to_string())?;
-    let (width, height) = reader
+    let (source_width, source_height) = reader
         .into_dimensions()
         .map_err(|error| format!("picture: {error}"))?;
-    if u64::from(width) * u64::from(height) > MAX_SOURCE_PIXELS {
-        return Err(format!("picture is {width}x{height}, too large"));
+    if u64::from(source_width) * u64::from(source_height) > MAX_SOURCE_PIXELS {
+        return Err(format!(
+            "picture is {source_width}x{source_height}, too large"
+        ));
     }
     let picture = image::load_from_memory(bytes)
         .map_err(|error| format!("picture: {error}"))?
         .to_rgb8();
-    let (target_w, target_h) = (WIDTH as u32, HEIGHT as u32);
+    let target_w = target_width as u32;
+    let target_h = target_height as u32;
     let fitted = match fit {
         Fit::Cover => image::imageops::resize(
             &crop_to_ratio(&picture, target_w, target_h),
@@ -956,7 +1316,13 @@ pub fn photo_frame(bytes: &[u8], fit: Fit) -> Result<Vec<u8>, String> {
             canvas
         }
     };
-    Ok(frame_from_rgb(fitted.as_raw(), true))
+    Ok(fitted.into_raw())
+}
+
+/// A PNG or JPEG, fitted to the panel and dithered.
+pub fn photo_frame(bytes: &[u8], fit: Fit) -> Result<Vec<u8>, String> {
+    let rgb = picture_rgb(bytes, fit, WIDTH, HEIGHT)?;
+    Ok(frame_from_rgb(&rgb, true))
 }
 
 /// The centred part of `picture` with the panel's aspect ratio.
@@ -1195,6 +1561,153 @@ mod tests {
         assert_eq!(at(&contain, 400, 10), WHITE, "letterbox above");
         assert_eq!(at(&contain, 10, 240), RED);
         assert!(photo_frame(b"not a picture", Fit::Cover).is_err());
+    }
+
+    fn tile_card() -> Card {
+        Card::List {
+            title: "Электричество".to_owned(),
+            items: vec![
+                Item {
+                    text: "Сейчас 0,67 c/кВт·ч (НДС 25,5 %)".to_owned(),
+                    status: Some(Status::Ok),
+                    counts: None,
+                },
+                Item {
+                    text: "Дешевле всего 06:00–08:00 · 0,88".to_owned(),
+                    status: None,
+                    counts: None,
+                },
+            ],
+            accent: Colour::Blue,
+        }
+    }
+
+    fn notice_tile_card() -> Card {
+        Card::Notice {
+            title: "Заметка".to_owned(),
+            body: "Длинный текст, который переносится по строкам и остаётся в своей области. "
+                .repeat(3),
+            accent: Colour::Green,
+        }
+    }
+
+    fn forecast_tile_card() -> Card {
+        Card::Forecast {
+            title: "Хельсинки".to_owned(),
+            days: [Icon::Clear, Icon::Partly, Icon::Rain, Icon::Snow]
+                .into_iter()
+                .enumerate()
+                .map(|(n, icon)| Day {
+                    label: format!("Д{n}"),
+                    icon,
+                    high: Some(5.0 - n as f32),
+                    low: Some(-3.0),
+                    precip_mm: Some(1.5),
+                })
+                .collect(),
+            note: "обновлено 10:00".to_owned(),
+            accent: Colour::Blue,
+        }
+    }
+
+    #[test]
+    fn a_tile_stays_inside_its_rectangle() {
+        let fonts = Fonts::load(None).expect("DejaVu Sans on this host");
+        let mut canvas = Canvas::new(WHITE);
+        let rect = Rect::new(401, 0, 399, 480);
+        render_tile(&mut canvas, rect, &tile_card(), &fonts, false);
+        for y in 0..HEIGHT {
+            for x in 0..rect.x {
+                let at = (y * WIDTH + x) * 3;
+                assert_eq!(
+                    &canvas.rgb[at..at + 3],
+                    &WHITE,
+                    "a tile drew at {x},{y}, outside its rectangle"
+                );
+            }
+        }
+        assert!(
+            canvas.rgb.chunks_exact(3).any(|pixel| pixel == BLACK),
+            "the tile drew nothing"
+        );
+    }
+
+    #[test]
+    fn tiles_draw_every_layout_in_the_palette() {
+        let fonts = Fonts::load(None).expect("DejaVu Sans on this host");
+        let cards = [notice_tile_card(), tile_card(), forecast_tile_card()];
+        for card in &cards {
+            for rect in [
+                Rect::new(0, 0, 800, 258),
+                Rect::new(0, 260, 399, 220),
+                Rect::new(0, 0, 399, 239),
+                Rect::new(401, 0, 399, 480),
+            ] {
+                let mut canvas = Canvas::new(BLACK);
+                render_tile(&mut canvas, rect, card, &fonts, false);
+                for y in rect.y..rect.bottom() {
+                    for x in rect.x..rect.right() {
+                        let at = (y * WIDTH + x) * 3;
+                        let pixel = &canvas.rgb[at..at + 3];
+                        assert!(
+                            PALETTE.iter().any(|entry| entry.1 == pixel),
+                            "{pixel:?} at {x},{y} is not a palette colour"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_picture_cannot_speckle_the_card_beside_it() {
+        let fonts = Fonts::load(None).expect("DejaVu Sans on this host");
+        let mut picture = image::RgbImage::new(64, 64);
+        let mut seed = 0x51ee_d0ff_u32;
+        for pixel in picture.pixels_mut() {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            let [r, g, b, _] = seed.to_le_bytes();
+            *pixel = image::Rgb([r, g, b]);
+        }
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgb8(picture)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let left = Rect::new(0, 0, 399, 480);
+        let right = Rect::new(401, 0, 399, 480);
+        let draw = |with_picture: bool| {
+            let mut canvas = Canvas::new(WHITE);
+            if with_picture {
+                draw_picture(&mut canvas, left, &encoded, Fit::Cover).unwrap();
+            }
+            render_tile(&mut canvas, right, &tile_card(), &fonts, false);
+            canvas
+        };
+        let with_picture = draw(true);
+        let blank = draw(false);
+        for y in 0..HEIGHT {
+            let from = (y * WIDTH + right.x) * 3;
+            let to = (y * WIDTH + right.right()) * 3;
+            assert_eq!(
+                &with_picture.rgb[from..to],
+                &blank.rgb[from..to],
+                "dithering from the picture reached row {y} of the card"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stale_tile_looks_different() {
+        let fonts = Fonts::load(None).expect("DejaVu Sans on this host");
+        let rect = Rect::new(0, 0, 399, 480);
+        let mut fresh = Canvas::new(WHITE);
+        let mut stale = Canvas::new(WHITE);
+        render_tile(&mut fresh, rect, &tile_card(), &fonts, false);
+        render_tile(&mut stale, rect, &tile_card(), &fonts, true);
+        assert_ne!(fresh.rgb, stale.rgb, "the stale marker is invisible");
     }
 
     #[test]

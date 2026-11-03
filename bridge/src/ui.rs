@@ -516,6 +516,13 @@ pub fn assistant_tool(context: &Arc<Context>, question: &str, peer: &str) -> Opt
                 return;
             }
         };
+        // The answer stays on the frame for a while: the next scheduled screen
+        // must not replace it while someone is still reading.
+        context.scheduler.override_frame(
+            &frame.id,
+            image.clone(),
+            std::time::Duration::from_secs(600),
+        );
         // The frame is still speaking its answer and refuses a picture until
         // the turn is over; try for a minute.
         for _ in 0..12 {
@@ -582,7 +589,7 @@ pub fn pull(
         .trim_start_matches("/frames/")
         .trim_end_matches("/next")
         .to_ascii_lowercase();
-    let Some(render) = context.scheduler.next(&id) else {
+    let Some(render) = context.scheduler.next(&id, context.fonts.as_deref()) else {
         return Response::new(204, "text/plain; charset=utf-8", Vec::new());
     };
     let etag = format!("\"{:016x}\"", render.hash);
@@ -707,7 +714,14 @@ fn plugin_action(context: &Context, rest: &str, body: &[u8]) -> Response {
                     if usize::from(panel.width) * usize::from(panel.height) / 2 == image.len() =>
                 {
                     match frames::display(&frame.host, frame.port, &image) {
-                        Ok(message) => Response::text(200, format!("{message}\n")),
+                        Ok(message) => {
+                            context.scheduler.override_frame(
+                                &frame.id,
+                                image.clone(),
+                                std::time::Duration::from_secs(600),
+                            );
+                            Response::text(200, format!("{message}\n"))
+                        }
                         Err(error) => Response::text(502, format!("ERR {error}\n")),
                     }
                 }
@@ -907,7 +921,7 @@ fn frame_action(
     match (method, action) {
         ("GET", "gallery") => forward("GET", "/gallery", &[]),
         ("GET", "sensors") => forward("GET", "/sensors", &[]),
-        ("GET", "queued") => match context.scheduler.next(id) {
+        ("GET", "queued") => match context.scheduler.next(id, context.fonts.as_deref()) {
             Some(queued) => match render::png(
                 &render::unpack(&queued.image),
                 render::WIDTH,
@@ -951,7 +965,14 @@ fn frame_action(
                     if usize::from(panel.width) * usize::from(panel.height) / 2 == frame.len() =>
                 {
                     match frames::display(&host, port, &frame) {
-                        Ok(message) => Response::text(200, format!("{message}\n")),
+                        Ok(message) => {
+                            context.scheduler.override_frame(
+                                id,
+                                frame.clone(),
+                                std::time::Duration::from_secs(600),
+                            );
+                            Response::text(200, format!("{message}\n"))
+                        }
                         Err(error) => Response::text(502, format!("ERR {error}\n")),
                     }
                 }
@@ -976,7 +997,14 @@ fn frame_action(
                 ),
                 None => Response::text(409, "ERR the frame's panel is not known yet; scan again\n"),
                 Some(_) => match frames::display(&host, port, &body) {
-                    Ok(message) => Response::text(200, format!("{message}\n")),
+                    Ok(message) => {
+                        context.scheduler.override_frame(
+                            id,
+                            body.clone(),
+                            std::time::Duration::from_secs(600),
+                        );
+                        Response::text(200, format!("{message}\n"))
+                    }
                     Err(error) => Response::text(502, format!("ERR {error}\n")),
                 },
             }
@@ -1340,11 +1368,14 @@ mod tests {
             "nothing queued"
         );
         {
-            let image = vec![0x11; render::FRAME_BYTES];
-            let hash = crate::jobs::content_hash(&image);
-            context
-                .scheduler
-                .queue_for_test("94a990caed46", image, hash);
+            let card: crate::render::Card =
+                serde_json::from_str(r#"{"layout":"notice","title":"test"}"#).unwrap();
+            context.scheduler.queue_for_test(
+                "94a990caed46",
+                "test",
+                crate::compose::Panel::Card(card),
+                0,
+            );
         }
         let first = pull(&context, path, auth, None);
         assert_eq!(first.status, 200);

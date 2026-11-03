@@ -8,6 +8,7 @@
 mod arithmetic;
 mod backends;
 mod commands;
+mod compose;
 mod frames;
 mod history;
 mod intents;

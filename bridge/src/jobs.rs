@@ -25,8 +25,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::compose::{self, Panel, Preset, Tile};
 use crate::frames;
 use crate::plugins::{self, ParamKind};
+use crate::render::Fonts;
 use crate::ui::Context;
 
 /// Longest interval a job may have: a week.
@@ -76,11 +78,36 @@ pub struct Job {
     pub priority: u8,
 }
 
+/// Which job fills which rectangle of a frame's screen.
+///
+/// A screen is opt-in: a frame without one behaves as it always did, and the
+/// newest highest-priority panel owns the whole panel.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Screen {
+    /// Frame id.
+    pub frame: String,
+    /// `single`, `stack`, `columns`, `hero` or `grid`; empty means `single`.
+    #[serde(default)]
+    pub preset: String,
+    /// Job ids in the preset's slot order; an empty string leaves a slot blank.
+    #[serde(default)]
+    pub slots: Vec<String>,
+}
+
+impl Screen {
+    pub fn preset(&self) -> Option<Preset> {
+        Preset::parse(&self.preset)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JobFile {
     #[serde(default, rename = "job")]
     pub jobs: Vec<Job>,
+    #[serde(default, rename = "screen", skip_serializing_if = "Vec::is_empty")]
+    pub screens: Vec<Screen>,
 }
 
 /// One picture waiting for (or already shown on) a frame.
@@ -89,9 +116,28 @@ pub struct Render {
     pub image: Arc<Vec<u8>>,
     /// Content hash; also the ETag.
     pub hash: u64,
-    pub priority: u8,
-    pub at_ms: u64,
+    /// The job that made it, or `screen` for a composed screen, or `answer`
+    /// for a spoken answer or a manual show.
     pub job: String,
+}
+
+/// What one job last produced for one frame, kept as content until the frame
+/// is drawn.
+#[derive(Debug, Clone)]
+struct Slot {
+    panel: Panel,
+    priority: u8,
+    at_ms: u64,
+    every_min: u32,
+}
+
+/// A picture put on the frame by the assistant or by a manual "show", which
+/// must survive the next scheduled composition for a while.
+#[derive(Debug, Clone)]
+struct Override {
+    image: Arc<Vec<u8>>,
+    hash: u64,
+    until_ms: u64,
 }
 
 /// One entry of the run log.
@@ -111,11 +157,24 @@ pub struct Scheduler {
     path: PathBuf,
     jobs: RwLock<JobFile>,
     last_run: Mutex<BTreeMap<String, Instant>>,
-    /// frame -> job -> latest picture.
-    outbox: Mutex<BTreeMap<String, BTreeMap<String, Render>>>,
+    /// frame -> job -> latest panel.
+    outbox: Mutex<BTreeMap<String, BTreeMap<String, Slot>>>,
+    /// frame -> a manual or spoken picture that outranks the screen for a while.
+    overrides: Mutex<BTreeMap<String, Override>>,
     /// frame -> hash of what it shows, as far as the bridge knows.
     shown: Mutex<BTreeMap<String, u64>>,
     runs: Mutex<VecDeque<Run>>,
+}
+
+/// A panel is stale when it is older than two of its job's intervals. A manual
+/// job has no interval, so its tile is stale after a day.
+fn stale(slot: &Slot, now: u64) -> bool {
+    let minutes = if slot.every_min == 0 {
+        24 * 60
+    } else {
+        u64::from(slot.every_min)
+    };
+    now.saturating_sub(slot.at_ms) > minutes.saturating_mul(2).saturating_mul(60_000)
 }
 
 fn now_ms() -> u64 {
@@ -148,18 +207,52 @@ pub fn content_hash(image: &[u8]) -> u64 {
 
 impl Scheduler {
     pub fn load(path: &Path) -> Result<Self, String> {
-        let jobs = match std::fs::read_to_string(path) {
+        let jobs: JobFile = match std::fs::read_to_string(path) {
             Ok(text) => {
                 toml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => JobFile::default(),
             Err(error) => return Err(format!("{}: {error}", path.display())),
         };
+        for screen in &jobs.screens {
+            let Some(preset) = screen.preset() else {
+                return Err(format!(
+                    "{}: screen {}: preset {:?} is not single, stack, columns, hero or grid",
+                    path.display(),
+                    screen.frame,
+                    screen.preset
+                ));
+            };
+            if screen.slots.len() > preset.cells().len() {
+                return Err(format!(
+                    "{}: screen {}: {} is {} slots, not {}",
+                    path.display(),
+                    screen.frame,
+                    preset.name(),
+                    preset.cells().len(),
+                    screen.slots.len()
+                ));
+            }
+            if jobs
+                .screens
+                .iter()
+                .filter(|other| other.frame == screen.frame)
+                .count()
+                > 1
+            {
+                return Err(format!(
+                    "{}: screen {}: a frame has one screen",
+                    path.display(),
+                    screen.frame
+                ));
+            }
+        }
         Ok(Self {
             path: path.to_path_buf(),
             jobs: RwLock::new(jobs),
             last_run: Mutex::new(BTreeMap::new()),
             outbox: Mutex::new(BTreeMap::new()),
+            overrides: Mutex::new(BTreeMap::new()),
             shown: Mutex::new(BTreeMap::new()),
             runs: Mutex::new(VecDeque::new()),
         })
@@ -204,12 +297,17 @@ impl Scheduler {
                 value
             })
             .collect();
+        let screens = self
+            .jobs
+            .read()
+            .map(|jobs| jobs.screens.clone())
+            .unwrap_or_default();
         let runs: Vec<Run> = self
             .runs
             .lock()
             .map(|runs| runs.iter().rev().take(50).cloned().collect())
             .unwrap_or_default();
-        serde_json::json!({"jobs": list, "runs": runs})
+        serde_json::json!({"jobs": list, "screens": screens, "runs": runs})
     }
 
     /// Add or replace a job from the UI. Parameters are checked against the
@@ -450,19 +548,12 @@ impl Scheduler {
             {
                 states.insert(key, state);
             }
-            let image = match plugins::frame_for(&outcome, context.fonts.as_deref()) {
-                Ok(Some(image)) => image,
-                Ok(None) => {
-                    log("nothing new", String::new());
-                    continue;
-                }
-                Err(error) => {
-                    log("failed", error);
-                    continue;
-                }
+            let Some(panel) = Panel::from_output(&outcome.output) else {
+                log("nothing new", String::new());
+                continue;
             };
-            let hash = content_hash(&image);
-            let (result, message) = self.deliver(job, frame_id, frame, image, hash);
+            let (result, message) =
+                self.deliver(job, frame_id, frame, panel, context.fonts.as_deref());
             log(&result, message);
         }
         if let Ok(mut log) = self.runs.lock() {
@@ -476,14 +567,14 @@ impl Scheduler {
         runs
     }
 
-    /// Queue the picture for the frame and push it if the frame is awake.
+    /// Queue the panel for the frame and push the screen if the frame is awake.
     fn deliver(
         &self,
         job: &Job,
         frame_id: &str,
         frame: Option<&frames::Frame>,
-        image: Vec<u8>,
-        hash: u64,
+        panel: Panel,
+        fonts: Option<&Fonts>,
     ) -> (String, String) {
         if job.mode == Mode::Gallery {
             let Some(frame) = frame.filter(|frame| frame.portal) else {
@@ -491,6 +582,10 @@ impl Scheduler {
                     "failed".to_owned(),
                     "storing needs the frame's portal, and it is not answering".to_owned(),
                 );
+            };
+            let image = match panel.frame(fonts) {
+                Ok(image) => image,
+                Err(error) => return ("failed".to_owned(), error),
             };
             let password = frame.portal_password().to_owned();
             return match frames::portal(&frame.host, &password, "POST", "/upload", &image) {
@@ -505,24 +600,28 @@ impl Scheduler {
                 Err(error) => ("failed".to_owned(), error),
             };
         }
-        let image = Arc::new(image);
         if let Ok(mut outbox) = self.outbox.lock() {
             outbox.entry(frame_id.to_owned()).or_default().insert(
                 job.id.clone(),
-                Render {
-                    image: Arc::clone(&image),
-                    hash,
+                Slot {
+                    panel,
                     priority: job.priority,
                     at_ms: now_ms(),
-                    job: job.id.clone(),
+                    every_min: job.every_min,
                 },
             );
         }
-        // What the frame should show now: the best queued picture, not
-        // necessarily this one (a higher-priority job may own the frame).
-        let Some(best) = self.next(frame_id) else {
+        // The screen may still be waiting for other jobs, and an answer that
+        // the frame is showing must not be replaced by a scheduled update.
+        let Some(best) = self.next(frame_id, fonts) else {
             return ("queued".to_owned(), String::new());
         };
+        if self.override_active(frame_id) {
+            return (
+                "queued".to_owned(),
+                "an answer is on the frame; this waits".to_owned(),
+            );
+        }
         if self
             .shown
             .lock()
@@ -553,29 +652,117 @@ impl Scheduler {
         }
     }
 
-    /// The picture a frame should show: highest priority, then newest.
-    pub fn next(&self, frame_id: &str) -> Option<Render> {
-        let outbox = self.outbox.lock().ok()?;
-        outbox
-            .get(frame_id)?
-            .values()
-            .max_by_key(|render| (render.priority, render.at_ms))
+    /// The screen of a frame, if it has one.
+    fn screen(&self, frame_id: &str) -> Option<Screen> {
+        self.jobs
+            .read()
+            .ok()?
+            .screens
+            .iter()
+            .find(|screen| screen.frame == frame_id)
             .cloned()
     }
 
+    /// The picture a frame should show: a spoken answer or manual show while
+    /// its dwell lasts, else the frame's screen, else the newest
+    /// highest-priority panel.
+    pub fn next(&self, frame_id: &str, fonts: Option<&Fonts>) -> Option<Render> {
+        let now = now_ms();
+        if let Ok(overrides) = self.overrides.lock()
+            && let Some(answer) = overrides.get(frame_id)
+            && now < answer.until_ms
+        {
+            return Some(Render {
+                image: Arc::clone(&answer.image),
+                hash: answer.hash,
+                job: "answer".to_owned(),
+            });
+        }
+        let screen = self.screen(frame_id);
+        let preset = screen
+            .as_ref()
+            .and_then(Screen::preset)
+            .unwrap_or(Preset::Single);
+        let outbox = self.outbox.lock().ok()?;
+        let panels = outbox.get(frame_id)?;
+        let (image, job) = if preset == Preset::Single {
+            let (job, slot) = panels
+                .iter()
+                .max_by_key(|(_, slot)| (slot.priority, slot.at_ms))?;
+            (slot.panel.frame(fonts).ok()?, job.clone())
+        } else {
+            let order: Vec<String> = screen
+                .as_ref()
+                .map(|screen| screen.slots.clone())
+                .unwrap_or_default();
+            let mut tiles: Vec<Option<Tile>> = Vec::with_capacity(preset.cells().len());
+            for index in 0..preset.cells().len() {
+                let slot = order.get(index).and_then(|id| panels.get(id));
+                tiles.push(slot.map(|slot| Tile {
+                    panel: &slot.panel,
+                    stale: stale(slot, now),
+                }));
+            }
+            let image = compose::render(preset, &tiles, fonts?).ok()?;
+            (image, "screen".to_owned())
+        };
+        let hash = content_hash(&image);
+        Some(Render {
+            image: Arc::new(image),
+            hash,
+            job,
+        })
+    }
+
+    /// Hold `image` on the frame for `dwell`, so the next scheduled screen does
+    /// not erase a spoken answer.
+    pub fn override_frame(&self, frame_id: &str, image: Vec<u8>, dwell: Duration) {
+        let hash = content_hash(&image);
+        let until_ms =
+            now_ms().saturating_add(u64::try_from(dwell.as_millis()).unwrap_or(u64::MAX));
+        if let Ok(mut overrides) = self.overrides.lock() {
+            overrides.insert(
+                frame_id.to_owned(),
+                Override {
+                    image: Arc::new(image),
+                    hash,
+                    until_ms,
+                },
+            );
+        }
+    }
+
+    fn override_active(&self, frame_id: &str) -> bool {
+        self.overrides
+            .lock()
+            .ok()
+            .and_then(|overrides| {
+                overrides
+                    .get(frame_id)
+                    .map(|answer| now_ms() < answer.until_ms)
+            })
+            .unwrap_or(false)
+    }
+
     #[cfg(test)]
-    pub fn queue_for_test(&self, frame_id: &str, image: Vec<u8>, hash: u64) {
+    pub fn queue_for_test(&self, frame_id: &str, job: &str, panel: Panel, priority: u8) {
         let mut outbox = self.outbox.lock().unwrap();
         outbox.entry(frame_id.to_owned()).or_default().insert(
-            "test".to_owned(),
-            Render {
-                image: Arc::new(image),
-                hash,
-                priority: 0,
+            job.to_owned(),
+            Slot {
+                panel,
+                priority,
                 at_ms: now_ms(),
-                job: "test".to_owned(),
+                every_min: 0,
             },
         );
+    }
+
+    #[cfg(test)]
+    pub fn set_screen_for_test(&self, screen: Screen) {
+        if let Ok(mut jobs) = self.jobs.write() {
+            jobs.screens.push(screen);
+        }
     }
 
     pub fn mark_shown(&self, frame_id: &str, hash: u64) {
@@ -597,24 +784,106 @@ mod tests {
         assert_eq!(content_hash(b""), content_hash(&[]));
     }
 
+    fn notice(text: &str) -> Panel {
+        Panel::Card(crate::render::Card::Notice {
+            title: text.to_owned(),
+            body: String::new(),
+            accent: crate::render::Colour::Blue,
+        })
+    }
+
+    fn fonts() -> Fonts {
+        Fonts::load(None).expect("DejaVu Sans on this host")
+    }
+
     #[test]
-    fn the_best_render_wins_by_priority_then_age() {
+    fn the_best_panel_wins_by_priority_then_age() {
         let scheduler = Scheduler::load(Path::new("/nonexistent/jobs.toml")).unwrap();
-        let render = |job: &str, priority, at_ms| Render {
-            image: Arc::new(vec![0]),
-            hash: 1,
-            priority,
-            at_ms,
-            job: job.to_owned(),
-        };
-        {
-            let mut outbox = scheduler.outbox.lock().unwrap();
-            let renders = outbox.entry("f".to_owned()).or_default();
-            renders.insert("old-urgent".to_owned(), render("old-urgent", 5, 10));
-            renders.insert("new".to_owned(), render("new", 0, 20));
+        scheduler.queue_for_test("f", "urgent", notice("a"), 5);
+        scheduler.queue_for_test("f", "calm", notice("b"), 0);
+        let fonts = fonts();
+        assert_eq!(
+            scheduler.next("f", Some(&fonts)).unwrap().job,
+            "urgent",
+            "a frame without a screen keeps the priority rule"
+        );
+        assert!(scheduler.next("other", Some(&fonts)).is_none());
+    }
+
+    #[test]
+    fn a_screen_draws_its_slots_in_order() {
+        let scheduler = Scheduler::load(Path::new("/nonexistent/jobs.toml")).unwrap();
+        scheduler.set_screen_for_test(Screen {
+            frame: "f".to_owned(),
+            preset: "columns".to_owned(),
+            slots: vec!["left".to_owned(), "right".to_owned()],
+        });
+        scheduler.queue_for_test("f", "left", notice("Погода"), 0);
+        scheduler.queue_for_test("f", "right", notice("Цена"), 0);
+        let fonts = fonts();
+        let render = scheduler.next("f", Some(&fonts)).unwrap();
+        assert_eq!(render.job, "screen");
+        assert_eq!(render.image.len(), crate::render::FRAME_BYTES);
+        // The same tiles always compose to the same picture.
+        assert_eq!(render.hash, scheduler.next("f", Some(&fonts)).unwrap().hash);
+        // One tile missing still gives a picture, and a different one.
+        let before = render.hash;
+        if let Ok(mut outbox) = scheduler.outbox.lock() {
+            outbox.get_mut("f").unwrap().remove("right");
         }
-        assert_eq!(scheduler.next("f").unwrap().job, "old-urgent");
-        assert!(scheduler.next("other").is_none());
+        assert_ne!(scheduler.next("f", Some(&fonts)).unwrap().hash, before);
+    }
+
+    #[test]
+    fn a_screen_with_no_tiles_has_no_picture() {
+        let scheduler = Scheduler::load(Path::new("/nonexistent/jobs.toml")).unwrap();
+        scheduler.set_screen_for_test(Screen {
+            frame: "f".to_owned(),
+            preset: "grid".to_owned(),
+            slots: vec!["a".to_owned()],
+        });
+        assert!(scheduler.next("f", Some(&fonts())).is_none());
+    }
+
+    #[test]
+    fn a_spoken_answer_outranks_the_screen_for_its_dwell() {
+        let scheduler = Scheduler::load(Path::new("/nonexistent/jobs.toml")).unwrap();
+        scheduler.set_screen_for_test(Screen {
+            frame: "f".to_owned(),
+            preset: "single".to_owned(),
+            slots: Vec::new(),
+        });
+        scheduler.queue_for_test("f", "job", notice("Погода"), 0);
+        let fonts = fonts();
+        assert_eq!(scheduler.next("f", Some(&fonts)).unwrap().job, "job");
+
+        scheduler.override_frame("f", vec![0x22; crate::render::FRAME_BYTES], Duration::ZERO);
+        assert_eq!(
+            scheduler.next("f", Some(&fonts)).unwrap().job,
+            "job",
+            "a zero dwell does not hold the answer"
+        );
+        scheduler.override_frame(
+            "f",
+            vec![0x33; crate::render::FRAME_BYTES],
+            Duration::from_secs(600),
+        );
+        let answer = scheduler.next("f", Some(&fonts)).unwrap();
+        assert_eq!(answer.job, "answer");
+        assert_eq!(answer.image[0], 0x33);
+    }
+
+    #[test]
+    fn an_unknown_preset_stops_the_scheduler_from_loading() {
+        let dir = std::env::temp_dir().join(format!("easellet-jobs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("jobs.toml");
+        std::fs::write(&path, "[[screen]]\nframe = \"f\"\npreset = \"poster\"\n").unwrap();
+        let error = Scheduler::load(&path)
+            .err()
+            .expect("a bad preset is an error");
+        assert!(error.contains("poster"), "{error}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -634,6 +903,7 @@ mod tests {
                 enabled: true,
                 priority: 1,
             }],
+            screens: Vec::new(),
         };
         let text = toml::to_string_pretty(&file).unwrap();
         assert!(text.contains("[[job]]"), "{text}");
