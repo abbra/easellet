@@ -380,12 +380,14 @@ and asks for speech.
 
 Plugins (`bridge/plugins/README.md`) produce cards or pictures. The Plugins tab
 lists each plugin as a closed section and opens one section at a time. This prevents
-the page from showing all fields for twelve plugins at once. A selector at the top
-jumps to a named plugin. The tab previews a plugin and saves it as a **job**: a plugin, its
-parameters, the frames, an interval and a priority. The bridge keeps jobs in
-`~/.config/easellet-bridge/jobs.toml` (owner-only). Secret parameters are
-write-only from the UI. The scheduler runs due jobs every half minute. It keeps the
-latest picture for each frame, pushes the picture to frames that are awake, and
+the page from showing all fields for twelve plugins at once. The sections are in
+groups that a manifest names (`category`): weather and nature, home, news and work,
+pictures, and examples. A selector at the top jumps to a named plugin. The tab
+previews a plugin and saves it as a **job**: a plugin, its parameters, the frames,
+an interval and a priority. The bridge keeps jobs in
+`~/.config/easellet-bridge/jobs.toml` (owner-only). Secret parameters are write-only
+from the UI. The scheduler runs due jobs every half minute. It keeps the latest
+picture for each frame, pushes the picture to frames that are awake, and
 leaves it for sleeping frames to fetch on their timed wake (`bridge.url` on the
 frame). The bridge never sends a picture again if it is identical to the one that a
 frame already shows. The run log is under the jobs.

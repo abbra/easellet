@@ -3,6 +3,7 @@ name = "hello"
 title = "Привет"
 description = "Карточка с приветствием и временем. Пример плагина на Python."
 i18n = { en = { title = "Hello", description = "A greeting card with the time. An example plugin in Python." } }
+category = "examples"
 run = "run.py"
 timeout_s = 5
 outputs = ["card"]

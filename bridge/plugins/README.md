@@ -23,6 +23,7 @@ manifest. A plugin in your directory replaces a shipped plugin of the same name.
 name = "weather"
 title = "Погода"                 # what the web UI shows
 description = "Прогноз на 4 дня."
+category = "weather"             # the group in the web UI, see below
 run = "run.py"                   # relative to the plugin directory
 timeout_s = 20                   # 1..120; the run is killed after it
 outputs = ["card", "none"]       # what it may return (empty = anything)
@@ -38,6 +39,13 @@ choices = []                     # for type = "choice"
 note = "Город или «широта,долгота»."
 i18n = { en = { title = "Place", note = "A city or «latitude,longitude»." } }
 ```
+
+The web UI files a plugin under the group that `category` names. It knows five
+groups: `weather` (weather and nature), `home`, `news` (news and work), `pictures`
+and `examples`. It shows them in that order, each sorted by title, and it shows a
+plugin that names no group as «Другое» (Other) last. A group that the UI does not
+know appears under the name in the manifest, so a plugin may invent one and still
+be found.
 
 The bridge stores `secret` parameters and never sends them back to a browser.
 `hidden = true` keeps a parameter out of the web form. Use it for a parameter that

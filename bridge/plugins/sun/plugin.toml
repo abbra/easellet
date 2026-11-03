@@ -2,6 +2,7 @@ name = "sun"
 title = "Солнце"
 description = "Восход, закат, длина дня и фаза Луны от Open-Meteo: без ключа и регистрации."
 i18n = { en = { title = "Sun", description = "Sunrise, sunset, day length and moon phase from Open-Meteo: no key and no signup." } }
+category = "weather"
 run = "run.py"
 timeout_s = 20
 outputs = ["card", "none"]

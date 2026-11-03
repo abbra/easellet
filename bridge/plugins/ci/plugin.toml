@@ -2,6 +2,7 @@ name = "ci"
 title = "Пул-реквесты и проверки"
 description = "Последние открытые PR репозитория GitHub и сколько их проверок упало, идёт и прошло (GitHub Actions и внешние CI). Без изменений — без обновления рамки."
 i18n = { en = { title = "Pull requests and checks", description = "A repository's latest open GitHub PRs and how many of their checks failed, are running and passed (GitHub Actions and external CI). Unchanged — no frame update." } }
+category = "news"
 run = "run.py"
 timeout_s = 40
 outputs = ["card", "none"]

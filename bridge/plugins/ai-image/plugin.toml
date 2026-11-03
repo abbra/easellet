@@ -2,6 +2,7 @@ name = "ai-image"
 title = "Картинка по описанию"
 description = "Генерирует картинку через сервис с API, совместимым с OpenAI Images (локальный или облачный)."
 i18n = { en = { title = "Picture from a description", description = "Draws a picture through a service with an OpenAI Images-compatible API (local or cloud)." } }
+category = "pictures"
 run = "run.py"
 timeout_s = 110
 outputs = ["image"]

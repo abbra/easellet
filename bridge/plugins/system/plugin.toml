@@ -3,6 +3,7 @@ name = "system"
 title = "Состояние моста"
 description = "Нагрузка, память и диск машины, где работает мост. Пример плагина на sh."
 i18n = { en = { title = "Bridge status", description = "Load, memory and disk of the machine running the bridge. An example plugin in sh." } }
+category = "examples"
 run = "run.sh"
 timeout_s = 5
 outputs = ["card"]

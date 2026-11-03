@@ -2,6 +2,7 @@ name = "agenda"
 title = "Календарь"
 description = "Ближайшие события из календаря iCalendar (.ics): адрес, файл на этом хосте или путь. Без изменений — без обновления рамки."
 i18n = { en = { title = "Calendar", description = "The next events of an iCalendar (.ics) calendar: an address, a file on this host or a path. Unchanged — no frame update." } }
+category = "news"
 run = "run.py"
 timeout_s = 20
 outputs = ["card", "none"]

@@ -221,7 +221,15 @@
   .expose summary { cursor: pointer; color: var(--ink); font-weight: 600; font-size: .95rem; }
   .expose .row { margin-top: .7rem; }
   .expose select, .expose input[type="text"] { flex: 1 1 12rem; }
-  .plugin-list { display: grid; gap: .75rem; }
+  .plugin-list { display: grid; gap: 1.1rem; }
+  /* Groups: what a frame shows every day comes first and the examples last, so
+     a long list reads as a few short ones. */
+  .plugin-group { display: grid; gap: .75rem; }
+  .plugin-group > h3 {
+    margin: 0; padding-bottom: .35rem; border-bottom: 1px solid var(--line);
+    font-size: .8rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--muted);
+  }
   /* A closed section per plugin: the head stays readable at a glance, the
      fields only appear for the plugin being used. */
   .plugin > summary {
@@ -451,6 +459,12 @@ const STRINGS = {
     "plugins.empty": "No plugins. Directories: {dirs}",
     "plugins.skipped": "Skipped: {problems}",
     "plugins.jump": "Jump to a plugin…",
+    "category.weather": "Weather and nature",
+    "category.home": "Home",
+    "category.news": "News and work",
+    "category.pictures": "Pictures",
+    "category.examples": "Examples",
+    "category.other": "Other",
     "load.failed": "Could not load: {error}",
     "plugin.targetNone": "no frame (just preview)",
     "plugin.preview": "Preview",
@@ -629,6 +643,12 @@ const STRINGS = {
     "plugins.empty": "Плагинов нет. Каталоги: {dirs}",
     "plugins.skipped": "Пропущены: {problems}",
     "plugins.jump": "Перейти к плагину…",
+    "category.weather": "Погода и природа",
+    "category.home": "Дом",
+    "category.news": "Новости и работа",
+    "category.pictures": "Картинки",
+    "category.examples": "Примеры",
+    "category.other": "Другое",
     "load.failed": "Не удалось загрузить: {error}",
     "plugin.targetNone": "без рамки (только посмотреть)",
     "plugin.preview": "Предпросмотр",

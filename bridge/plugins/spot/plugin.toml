@@ -2,6 +2,7 @@ name = "spot"
 title = "Электричество"
 description = "Цена электричества Nord Pool для Финляндии и Балтии: сейчас, дешёвые и дорогие часы, тренд на завтра. Без ключа."
 i18n = { en = { title = "Electricity", description = "The Nord Pool electricity price for Finland and the Baltics: now, the cheapest and dearest hours, and tomorrow's trend. No key." } }
+category = "home"
 run = "run.py"
 timeout_s = 20
 outputs = ["card", "none"]

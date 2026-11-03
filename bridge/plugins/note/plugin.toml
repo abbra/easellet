@@ -2,6 +2,7 @@ name = "note"
 title = "Записка"
 description = "Сообщение на рамку: заголовок и текст."
 i18n = { en = { title = "Note", description = "A message for the frame: a heading and text." } }
+category = "home"
 run = "run.py"
 timeout_s = 5
 outputs = ["card"]

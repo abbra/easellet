@@ -108,6 +108,11 @@ pub struct Manifest {
     pub title: String,
     #[serde(default)]
     pub description: String,
+    /// The group the web interface files the plugin under. The interface knows
+    /// `weather`, `home`, `news`, `pictures` and `examples`, and shows a group
+    /// it does not know under its own name; a plugin without one is "other".
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub category: String,
     #[serde(default = "default_version")]
     pub version: String,
     /// The program, relative to the plugin's directory.
@@ -842,6 +847,49 @@ default = "blue"
             json["i18n"]["en"].get("note").is_none(),
             "empty fields are left out"
         );
+    }
+
+    #[test]
+    fn a_manifest_names_the_group_of_the_plugin() {
+        let manifest = MANIFEST.replace(
+            "title = \"Echo\"",
+            "title = \"Echo\"\ncategory = \"weather\"",
+        );
+        let fixture = Fixture::new("echo", &manifest, "#!/bin/sh\n");
+        let (plugins, problems) = discover(&[fixture.root.clone()]);
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(plugins[0].manifest.category, "weather");
+        // A plugin that names no group is the interface's "other", not a broken
+        // manifest, so the field stays out of the JSON entirely.
+        let (plugin, _fixture) = plugin("#!/bin/sh\nexit 0\n");
+        assert!(plugin.manifest.category.is_empty());
+        assert!(
+            serde_json::to_value(&plugin.manifest)
+                .unwrap()
+                .get("category")
+                .is_none()
+        );
+    }
+
+    /// The groups the web interface has words and a place for. A shipped plugin
+    /// that invents one would sort under its own name, which is not what its
+    /// author meant, so the shipped manifests are checked here.
+    const CATEGORIES: [&str; 5] = ["weather", "home", "news", "pictures", "examples"];
+
+    #[test]
+    fn every_shipped_plugin_names_a_known_group() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins");
+        let (plugins, problems) = discover(&[dir]);
+        assert!(problems.is_empty(), "{problems:?}");
+        assert!(plugins.len() >= 12, "{}", plugins.len());
+        for plugin in &plugins {
+            assert!(
+                CATEGORIES.contains(&plugin.manifest.category.as_str()),
+                "{} names the group {:?}",
+                plugin.manifest.name,
+                plugin.manifest.category
+            );
+        }
     }
 
     #[test]

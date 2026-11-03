@@ -2,6 +2,7 @@ name = "photo-folder"
 title = "Фото из папки"
 description = "По очереди показывает фотографии из папки на машине моста (JPEG и PNG)."
 i18n = { en = { title = "Photos from a folder", description = "Shows photographs from a folder on the bridge's machine in turn (JPEG and PNG)." } }
+category = "pictures"
 run = "run.py"
 timeout_s = 20
 outputs = ["image", "none"]

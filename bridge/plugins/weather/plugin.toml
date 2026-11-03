@@ -2,6 +2,7 @@ name = "weather"
 title = "Погода"
 description = "Прогноз на несколько дней от Open-Meteo: без ключа и регистрации."
 i18n = { en = { title = "Weather", description = "A forecast for the next days from Open-Meteo: no key and no signup." } }
+category = "weather"
 run = "run.py"
 timeout_s = 20
 outputs = ["card"]

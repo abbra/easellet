@@ -2,6 +2,7 @@ name = "news"
 title = "Новости"
 description = "Заголовки из ленты RSS или Atom. Если заголовки не изменились, рамка не обновляется."
 i18n = { en = { title = "News", description = "Headlines from an RSS or Atom feed. If the headlines did not change, the frame is not updated." } }
+category = "news"
 run = "run.py"
 timeout_s = 20
 outputs = ["card", "none"]

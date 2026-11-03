@@ -523,27 +523,63 @@ const localized = (object, field) => object?.i18n?.[language]?.[field] || object
 /// what it had open is worse than no accordion.
 let openPlugin = null;
 
+/// The groups of the Plugins tab, in the order it shows them: what a frame
+/// shows every day first, examples last. The labels are the interface's own
+/// (`category.<id>`), because the group is the interface's idea and not a
+/// plugin's: a manifest names one, it does not name it in words.
+const PLUGIN_GROUPS = ["weather", "home", "news", "pictures", "examples"];
+
+/// A group's heading word. The page knows its own groups; one that a manifest
+/// invented keeps the name the author wrote, which is at worst untranslated.
+const groupName = (id) =>
+  id === "other" || PLUGIN_GROUPS.includes(id) ? t(`category.${id}`) : id;
+
+/// The plugins of one group, each group's plugins sorted by the title the page
+/// shows them under. A group the page does not know (a plugin author's own)
+/// follows the known ones under its own name; a plugin that names no group is
+/// "other" and comes last.
+function arrangePlugins(plugins) {
+  const place = (id) => {
+    const known = PLUGIN_GROUPS.indexOf(id);
+    return known >= 0 ? known : id === "other" ? PLUGIN_GROUPS.length + 1 : PLUGIN_GROUPS.length;
+  };
+  const groups = new Map();
+  for (const plugin of plugins) {
+    const id = plugin.category || "other";
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(plugin);
+  }
+  const label = (plugin) => localized(plugin, "title");
+  return [...groups.entries()]
+    .sort(([a], [b]) => place(a) - place(b) || a.localeCompare(b))
+    .map(([id, list]) => [id, list.sort((a, b) => label(a).localeCompare(label(b), language))]);
+}
+
 async function loadPlugins() {
   try {
     const [pluginAnswer, frameAnswer] = await Promise.all([fetch("/api/plugins"), fetch("/api/frames")]);
     if (!pluginAnswer.ok) throw new Error((await pluginAnswer.text()).trim());
     const { plugins, problems, dirs } = await pluginAnswer.json();
     const { frames } = frameAnswer.ok ? await frameAnswer.json() : { frames: [] };
-    // The jump selector is the short way in when eight closed sections are all
-    // on screen; it follows the accordion rather than duplicating its state.
+    // The jump selector is the short way in when a dozen closed sections are
+    // all on screen; it follows the accordion rather than duplicating its state.
+    pluginTitles.clear();
+    for (const plugin of plugins) pluginTitles.set(plugin.name, localized(plugin, "title"));
+    const arranged = arrangePlugins(plugins);
+    // The selector carries the same groups, so the list and the jump agree.
     const jump = $("plugin-jump");
     jump.replaceChildren(new Option(t("plugins.jump"), ""));
-    pluginTitles.clear();
-    for (const plugin of plugins) {
-      const title = localized(plugin, "title");
-      pluginTitles.set(plugin.name, title);
-      jump.append(new Option(title, plugin.name));
+    for (const [id, list] of arranged) {
+      const group = document.createElement("optgroup");
+      group.label = groupName(id);
+      for (const plugin of list) group.append(new Option(pluginTitles.get(plugin.name), plugin.name));
+      jump.append(group);
     }
     jump.value = plugins.some((plugin) => plugin.name === openPlugin) ? openPlugin : "";
     $("plugin-jump-row").hidden = plugins.length === 0;
     $("plugin-list").replaceChildren(
       ...(plugins.length
-        ? plugins.map((plugin) => pluginCard(plugin, frames))
+        ? arranged.map(([id, list]) => pluginGroup(id, list, frames))
         : [text("p", t("plugins.empty", { dirs: dirs.join(", ") }), "empty")]),
     );
     $("plugin-problems").textContent = problems.length
@@ -552,6 +588,17 @@ async function loadPlugins() {
   } catch (error) {
     $("plugin-list").replaceChildren(text("p", t("load.failed", { error: error.message }), "empty"));
   }
+}
+
+/// One group of the Plugins tab: a heading and its closed sections.
+function pluginGroup(id, plugins, frames) {
+  const section = document.createElement("section");
+  section.className = "plugin-group";
+  section.append(
+    text("h3", groupName(id)),
+    ...plugins.map((plugin) => pluginCard(plugin, frames)),
+  );
+  return section;
 }
 
 function pluginCard(plugin, frames) {
