@@ -26,14 +26,35 @@ _LINK = re.compile(r"!?\[[^\]]*\]\(\s*([^)\s]+)(?:\s+\"[^\"]*\")?\s*\)")
 _SKIP_SCHEME = ("http://", "https://", "mailto:", "tel:", "#")
 
 
+def git_ls_files(pattern: str) -> str:
+    """List the tracked files matching `pattern`, tolerating a foreign checkout.
+
+    A container job usually checks the tree out as one user and reads it as
+    another, and git then refuses to touch the repository at all unless it is
+    told the directory is safe. The directory is the one this script lives in,
+    so the only thing being trusted is the caller's own checkout. The retry is
+    narrow on purpose: every other failure is reported as it came.
+    """
+    def run(*options: str) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                ["git", "-C", str(ROOT), *options, "ls-files", "-z", pattern],
+                capture_output=True, text=True,
+            )
+        except OSError as error:
+            sys.exit(f"ERR git ls-files: {error}")
+
+    result = run()
+    if result.returncode != 0 and "dubious ownership" in result.stderr:
+        result = run("-c", "safe.directory=*")
+    if result.returncode != 0:
+        reason = result.stderr.strip() or f"exit status {result.returncode}"
+        sys.exit(f"ERR git ls-files: {reason}")
+    return result.stdout
+
+
 def tracked_markdown() -> list[Path]:
-    try:
-        listed = subprocess.run(
-            ["git", "-C", str(ROOT), "ls-files", "-z", "*.md"],
-            check=True, capture_output=True, text=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError) as error:
-        sys.exit(f"ERR git ls-files: {error}")
+    listed = git_ls_files("*.md")
     return [ROOT / name for name in listed.split("\0") if name]
 
 
