@@ -433,9 +433,191 @@ function buildCard(initial) {
     }
   });
 
+  // The screen: which job fills which rectangle of this frame.
+  const screenBox = document.createElement("details");
+  screenBox.className = "note-card screen-card";
+  const screenSummary = text("summary", t("screen.summary"));
+  const screenBody = document.createElement("div");
+  screenBody.className = "screen-body";
+  const screenNote = text("p", t("screen.note"), "note");
+  const presetField = document.createElement("div");
+  presetField.className = "field";
+  const presetLabel = text("label", t("screen.preset"));
+  presetLabel.htmlFor = `screen-preset-${initial.id}`;
+  const preset = document.createElement("select");
+  preset.id = `screen-preset-${initial.id}`;
+  const PRESETS = {
+    single: ["a"],
+    stack: ["a a", "b b"],
+    columns: ["a b"],
+    hero: ["a a", "b c"],
+    grid: ["a b", "c d"],
+  };
+  for (const name of Object.keys(PRESETS)) {
+    preset.append(new Option(t(`screen.presets.${name}`), name));
+  }
+  presetField.append(presetLabel, preset);
+  const map = document.createElement("div");
+  map.className = "preset-map";
+  map.setAttribute("aria-hidden", "true");
+  const slots = document.createElement("div");
+  slots.className = "screen-slots";
+  const screenSave = text("button", t("screen.save"), "primary");
+  const screenPreview = text("button", t("screen.preview"));
+  const screenShow = text("button", t("screen.show"));
+  const screenButtons = document.createElement("div");
+  screenButtons.className = "row";
+  screenButtons.append(screenSave, screenPreview, screenShow);
+  const screenMessage = text("p", "", "message");
+  const screenImage = document.createElement("img");
+  screenImage.className = "preview";
+  screenImage.alt = t("screen.previewAlt");
+  screenImage.hidden = true;
+  screenBody.append(
+    screenNote,
+    presetField,
+    map,
+    slots,
+    screenButtons,
+    screenMessage,
+    screenImage,
+  );
+  screenBox.append(screenSummary, screenBody);
+
+  let jobsForFrame = [];
+  const areas = () => PRESETS[preset.value] ?? PRESETS.single;
+  const slotNames = () => [...new Set(areas().join(" ").split(" "))];
+
+  function drawMap() {
+    const rows = areas();
+    const columns = rows[0].split(" ").length;
+    map.style.gridTemplateAreas = rows.map((row) => `"${row}"`).join(" ");
+    map.style.gridTemplateRows = `repeat(${rows.length}, 1fr)`;
+    map.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+    map.replaceChildren(
+      ...slotNames().map((area) => {
+        const cell = document.createElement("span");
+        cell.style.gridArea = area;
+        return cell;
+      }),
+    );
+  }
+
+  function jobName(job) {
+    return `${job.title || pluginTitles.get(job.plugin) || job.plugin} · ${job.id}`;
+  }
+
+  function buildSlots(values = []) {
+    slots.replaceChildren(
+      ...slotNames().map((_, index) => {
+        const field = document.createElement("div");
+        field.className = "field";
+        const label = text("label", t("screen.slot", { n: index + 1 }));
+        const select = document.createElement("select");
+        select.append(new Option(t("screen.empty"), ""));
+        for (const job of jobsForFrame) select.append(new Option(jobName(job), job.id));
+        const chosen = values[index] ?? "";
+        if (chosen && !jobsForFrame.some((job) => job.id === chosen)) {
+          select.append(new Option(`${chosen} (${t("screen.missing")})`, chosen));
+        }
+        select.value = chosen;
+        field.append(label, select);
+        return field;
+      }),
+    );
+  }
+
+  async function loadScreen() {
+    screenMessage.textContent = t("screen.loading");
+    screenMessage.className = "message";
+    try {
+      const [jobAnswer, screenAnswer] = await Promise.all([
+        fetch("/api/jobs"),
+        fetch("/api/screens"),
+      ]);
+      if (!jobAnswer.ok || !screenAnswer.ok) throw new Error(t("load.failedShort"));
+      const { jobs } = await jobAnswer.json();
+      const { screens } = await screenAnswer.json();
+      jobsForFrame = jobs.filter(
+        (job) => job.mode !== "gallery" && job.frames.includes(frame.id),
+      );
+      const saved = screens.find((screen) => screen.frame === frame.id);
+      preset.value = saved?.preset ?? "single";
+      drawMap();
+      buildSlots(saved?.slots ?? []);
+      screenMessage.className = "message";
+      screenMessage.textContent = jobsForFrame.length ? "" : t("screen.noJobs");
+    } catch (error) {
+      screenMessage.textContent = error.message;
+      screenMessage.className = "message bad";
+    }
+  }
+
+  preset.addEventListener("change", () => {
+    const values = [...slots.querySelectorAll("select")].map((select) => select.value);
+    drawMap();
+    buildSlots(values);
+  });
+
+  screenSave.addEventListener("click", async () => {
+    screenSave.disabled = true;
+    const values = [...slots.querySelectorAll("select")].map((select) => select.value);
+    try {
+      const answer = await post("/api/screens/save", {
+        frame: frame.id,
+        preset: preset.value,
+        slots: values,
+      });
+      const reply = (await answer.text()).trim();
+      screenMessage.textContent = answer.ok ? t("screen.saved") : reply;
+      screenMessage.className = answer.ok ? "message ok" : "message bad";
+    } catch (error) {
+      screenMessage.textContent = error.message;
+      screenMessage.className = "message bad";
+    } finally {
+      screenSave.disabled = false;
+    }
+  });
+
+  screenPreview.addEventListener("click", async () => {
+    screenMessage.textContent = t("screen.loading");
+    screenMessage.className = "message";
+    try {
+      const answer = await fetch(`/api/frames/${frame.id}/screen.png`, { cache: "no-store" });
+      if (answer.status === 204) {
+        screenMessage.textContent = t("screen.nothing");
+        return;
+      }
+      if (!answer.ok) throw new Error((await answer.text()).trim());
+      if (screenImage.src) URL.revokeObjectURL(screenImage.src);
+      screenImage.src = URL.createObjectURL(await answer.blob());
+      screenImage.hidden = false;
+      screenMessage.textContent = "";
+    } catch (error) {
+      screenMessage.textContent = error.message;
+      screenMessage.className = "message bad";
+    }
+  });
+
+  screenShow.addEventListener("click", async () => {
+    screenShow.disabled = true;
+    screenMessage.textContent = t("card.sending");
+    try {
+      const answer = await postBytes(`/api/frames/${frame.id}/screen`);
+      screenMessage.textContent = (await answer.text()).trim();
+      screenMessage.className = answer.ok ? "message ok" : "message bad";
+    } finally {
+      screenShow.disabled = false;
+    }
+  });
+
+  screenBox.addEventListener("toggle", () => {
+    if (screenBox.open) loadScreen();
+  });
+
   const actions = document.createElement("div");
   actions.className = "row";
-  element.append(header, chips, actions, send, note, gallery);
+  element.append(header, chips, actions, send, note, screenBox, gallery);
 
   function update(next) {
     frame = next;
@@ -477,6 +659,7 @@ function buildCard(initial) {
     store.disabled = !packed || !frame.portal;
     show.disabled = !packed || !frame.panel;
     noteShow.disabled = !frame.panel;
+    screenShow.disabled = !frame.panel;
     actions.replaceChildren(galleryToggle, ...(frame.manual ? [remove] : []));
     send.hidden = !frame.panel && !frame.portal;
   }

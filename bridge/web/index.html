@@ -286,6 +286,12 @@
   .note-card > summary::-webkit-details-marker { display: none; }
   .note-card .field { margin-top: .6rem; display: grid; gap: .5rem; }
   .note-card textarea { min-height: 4.5rem; }
+  .screen-card .screen-body { display: grid; gap: .7rem; }
+  .screen-card .field { margin-top: 0; }
+  .screen-card .preset-map { display: grid; gap: 3px; width: 104px; aspect-ratio: 5 / 3; }
+  .screen-card .preset-map span { background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 3px; }
+  .screen-card .screen-slots { display: grid; gap: .6rem; }
+  @media (min-width: 780px) { .screen-card .screen-slots { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); } }
 
   .add-frame .row { margin-top: .6rem; }
   .add-frame input { flex: 1 1 10rem; }
@@ -580,6 +586,26 @@ const STRINGS = {
     "note.preview": "Preview",
     "note.show": "Show on the frame",
     "note.alt": "How the frame will show it",
+    "screen.summary": "Screen",
+    "screen.note": "Several plugins on one frame. Each slot shows the latest result of one job.",
+    "screen.preset": "Layout",
+    "screen.slot": "Slot {n}",
+    "screen.empty": "Empty",
+    "screen.missing": "the job is gone",
+    "screen.noJobs": "No job shows on this frame yet. Save one from a plugin first.",
+    "screen.save": "Save screen",
+    "screen.saved": "Screen saved.",
+    "screen.preview": "Refresh preview",
+    "screen.show": "Show on the frame",
+    "screen.nothing": "The screen has nothing to show yet.",
+    "screen.previewAlt": "The frame's screen",
+    "screen.loading": "Loading…",
+    "screen.presets.single": "One panel",
+    "screen.presets.stack": "Two rows",
+    "screen.presets.columns": "Two columns",
+    "screen.presets.hero": "One panel and a strip",
+    "screen.presets.grid": "Four panels",
+    "load.failedShort": "The bridge did not answer.",
     "color.blue": "blue",
     "color.red": "red",
     "color.green": "green",
@@ -766,6 +792,26 @@ const STRINGS = {
     "note.preview": "Предпросмотр",
     "note.show": "Показать на рамке",
     "note.alt": "Как это покажет рамка",
+    "screen.summary": "Экран",
+    "screen.note": "Несколько плагинов на одной рамке. Каждое место показывает последний результат одного задания.",
+    "screen.preset": "Раскладка",
+    "screen.slot": "Место {n}",
+    "screen.empty": "Пусто",
+    "screen.missing": "задание удалено",
+    "screen.noJobs": "На этой рамке пока нет заданий. Сначала сохраните задание на странице плагина.",
+    "screen.save": "Сохранить экран",
+    "screen.saved": "Экран сохранён.",
+    "screen.preview": "Обновить просмотр",
+    "screen.show": "Показать на рамке",
+    "screen.nothing": "Экрану пока нечего показать.",
+    "screen.previewAlt": "Экран рамки",
+    "screen.loading": "Загружаю…",
+    "screen.presets.single": "Один плагин",
+    "screen.presets.stack": "Два ряда",
+    "screen.presets.columns": "Две колонки",
+    "screen.presets.hero": "Основной и полоса",
+    "screen.presets.grid": "Четыре панели",
+    "load.failedShort": "Мост не ответил.",
     "color.blue": "синий",
     "color.red": "красный",
     "color.green": "зелёный",
