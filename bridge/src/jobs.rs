@@ -785,9 +785,19 @@ impl Scheduler {
         let outbox = self.outbox.lock().ok()?;
         let panels = outbox.get(frame_id)?;
         let (image, job) = if preset == Preset::Single {
-            let (job, slot) = panels
-                .iter()
-                .max_by_key(|(_, slot)| (slot.priority, slot.at_ms))?;
+            // A saved one-panel screen names the job it wants; without one, the
+            // frame keeps the old priority rule.
+            let chosen = screen
+                .as_ref()
+                .and_then(|screen| screen.slots.first())
+                .filter(|id| !id.is_empty())
+                .and_then(|id| panels.get(id).map(|slot| (id, slot)));
+            let (job, slot) = match chosen {
+                Some(chosen) => chosen,
+                None => panels
+                    .iter()
+                    .max_by_key(|(_, slot)| (slot.priority, slot.at_ms))?,
+            };
             (slot.panel.frame(fonts).ok()?, job.clone())
         } else {
             let order: Vec<String> = screen
@@ -938,6 +948,23 @@ mod tests {
             outbox.get_mut("f").unwrap().remove("right");
         }
         assert_ne!(scheduler.next("f", Some(&fonts)).unwrap().hash, before);
+    }
+
+    #[test]
+    fn a_one_panel_screen_names_its_job() {
+        let scheduler = Scheduler::load(Path::new("/nonexistent/jobs.toml")).unwrap();
+        scheduler.set_screen_for_test(Screen {
+            frame: "f".to_owned(),
+            preset: "single".to_owned(),
+            slots: vec!["calm".to_owned()],
+        });
+        scheduler.queue_for_test("f", "calm", notice("выбран"), 0);
+        scheduler.queue_for_test("f", "urgent", notice("приоритет"), 9);
+        assert_eq!(
+            scheduler.next("f", Some(&fonts())).unwrap().job,
+            "calm",
+            "a saved screen chooses the panel, not the priority"
+        );
     }
 
     #[test]

@@ -158,9 +158,11 @@ pub fn render(
     tiles: &[Option<Tile<'_>>],
     fonts: &Fonts,
 ) -> Result<Vec<u8>, String> {
-    if let Some(tile) = tiles.first().and_then(Option::as_ref)
-        && preset == Preset::Single
-    {
+    if preset == Preset::Single {
+        let tile = tiles
+            .first()
+            .and_then(Option::as_ref)
+            .ok_or_else(|| "nothing to show".to_owned())?;
         return tile.panel.frame(Some(fonts));
     }
     let mut canvas = render::Canvas::new(render::WHITE);
