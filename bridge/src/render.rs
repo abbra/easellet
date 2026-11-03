@@ -408,6 +408,22 @@ fn one_line(fonts: &Fonts, face: Face, size: f32, text: &str, max: f32) -> Strin
     format!("{}…", line.trim_end())
 }
 
+/// The largest size on a two-pixel ladder at or below `size` at which `text`
+/// fits `room`, and the floor of that ladder when nothing does.
+///
+/// A tile is narrower than a panel: `spot`'s «Дешевле всего 20:00–22:00 · 33,26»
+/// needs about 430 px and a column has 360, so trimming it at 24 px leaves
+/// «· 33,…» — the number that matters is cut. Two pixels smaller keeps the
+/// same words on the same row and is still read comfortably at arm's length.
+fn fitting_size(fonts: &Fonts, face: Face, size: f32, text: &str, room: f32) -> f32 {
+    let floor = 15.0;
+    let mut size = size;
+    while size > floor && measure(fonts, face, size, text) > room {
+        size -= 2.0;
+    }
+    size.max(floor)
+}
+
 fn fit_rows(
     fonts: &Fonts,
     face: Face,
@@ -961,10 +977,11 @@ pub fn render_tile(canvas: &mut Canvas, rect: Rect, card: &Card, fonts: &Fonts, 
                     .counts
                     .map_or(0.0, |counts| tallies_width(fonts, tally_size, counts));
                 let room = (rect.right() as f32 - margin - x - tallies).max(20.0);
-                let line = one_line(fonts, Face::Regular, size, &item.text, room);
+                let row_size = fitting_size(fonts, Face::Regular, size, &item.text, room);
+                let line = one_line(fonts, Face::Regular, row_size, &item.text, room);
                 canvas.text(
                     fonts,
-                    (Face::Regular, size),
+                    (Face::Regular, row_size),
                     (x, top + row_height * 0.68),
                     &line,
                     BLACK,
@@ -1708,6 +1725,26 @@ mod tests {
         render_tile(&mut fresh, rect, &tile_card(), &fonts, false);
         render_tile(&mut stale, rect, &tile_card(), &fonts, true);
         assert_ne!(fresh.rgb, stale.rgb, "the stale marker is invisible");
+    }
+
+    #[test]
+    fn a_long_row_shrinks_before_it_is_trimmed() {
+        let fonts = Fonts::load(None).expect("DejaVu Sans on this host");
+        let text = "Дешевле всего 20:00–22:00 · 33,26";
+        // A column of `columns` is 399 px wide and its rows have 359 px of room.
+        let room = 359.0;
+        assert!(
+            measure(&fonts, Face::Regular, 24.0, text) > room,
+            "the row is long"
+        );
+        let size = fitting_size(&fonts, Face::Regular, 24.0, text, room);
+        assert!(size < 24.0 && size >= 15.0, "the ladder ran: {size}");
+        assert!(measure(&fonts, Face::Regular, size, text) <= room);
+        // A row that already fits keeps the size the layout chose.
+        assert_eq!(
+            fitting_size(&fonts, Face::Regular, 24.0, "Закат 16:18", room),
+            24.0
+        );
     }
 
     #[test]
