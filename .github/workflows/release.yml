@@ -1,0 +1,237 @@
+# A release: build the image from the tag, publish it as a release asset, and
+# write the index the bridge reads.
+#
+# The tag is the trigger, not a version bump in a commit: a version is a decision
+# a person makes, so `scripts/release.sh` bumps the nine copies, writes the
+# changelog section, commits and tags, and this workflow does the rest from that
+# tag. Nothing here can bump a version or push a commit.
+#
+# The release is created as a draft, gets its assets, and is published last, so
+# the store never shows a release that is missing its image. Every release keeps
+# its assets: an older image is the recovery path for a bad one, and 1.2 MB
+# apiece costs nothing.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  # A re-run of a release, for a build that broke on something outside the tag.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to release, without the v, e.g. 0.2.0"
+        required: true
+
+permissions:
+  contents: write
+  packages: read
+
+# A release is not cancelled by the next one: half a release is worse than a
+# release that starts a minute later.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Keep this equal to `ci.yml` and to the hash of the image's inputs.
+  CI_IMAGE: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: tag
+        name: The tag names the version the tree carries
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in
+            refs/tags/v*) tag="$GITHUB_REF" ;;
+            *) tag="v${{ inputs.version }}" ;;
+          esac
+          tag="${tag#refs/tags/}"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERR $tag is not vX.Y.Z" >&2
+            exit 1
+          fi
+          # The nine copies, the tag and the changelog section have to agree, or
+          # one slot of the frame tells a different story than the other.
+          python3 tools/check-version.py "$tag"
+          version="${tag#v}"
+          grep -q "^## \[$version\]" CHANGELOG.md || {
+            echo "ERR CHANGELOG.md has no section for $version" >&2
+            exit 1
+          }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: The commit is on main
+        run: |
+          set -euo pipefail
+          git fetch --quiet --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main || {
+            echo "ERR $GITHUB_SHA is not on main" >&2
+            exit 1
+          }
+
+  firmware:
+    needs: verify
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The same caches as `ci.yml`, so a release normally reuses the toolchain
+      # and the `target` directory the last green `main` left behind.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .tools
+            .embuild
+          key: esp-${{ hashFiles('.github/esp-toolchain.txt', '.cargo/config.toml', 'Cargo.lock') }}
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: target-${{ hashFiles('Cargo.lock', '.github/esp-toolchain.txt') }}-${{ github.sha }}
+          restore-keys: |
+            target-${{ hashFiles('Cargo.lock', '.github/esp-toolchain.txt') }}-
+      - name: The toolchain
+        run: |
+          set -euo pipefail
+          source scripts/env.sh
+          rustup-init -y --no-modify-path --default-toolchain none
+          espup install --targets esp32s3 --export-file .tools/export-esp.sh
+          python3 -m venv --system-site-packages .venv-tools
+          cargo --version
+      - name: Build the release image
+        run: |
+          set -euo pipefail
+          source scripts/env.sh
+          bash scripts/build-firmware.sh "${{ needs.verify.outputs.version }}" \
+            | tee target/build.txt
+      - name: Collect the assets
+        run: |
+          set -euo pipefail
+          version="${{ needs.verify.outputs.version }}"
+          image=target/xtensa-esp32s3-espidf/release/easellet.bin
+          mkdir -p dist
+          cp target/build.txt dist/build.txt
+          cp "$image" "dist/easellet-$version.bin"
+          cp target/xtensa-esp32s3-espidf/release/bootloader.bin dist/
+          cp target/partition-table.bin dist/
+          (cd dist && sha256sum "easellet-$version.bin" > "easellet-$version.bin.sha256")
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+  release:
+    needs: [verify, firmware]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+      - name: Write the index and the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          set -euo pipefail
+          image="easellet-$VERSION.bin"
+          read -r slot_bytes _ <<< "$(python3 tools/partitions.py)"
+
+          # The index is cumulative: the last release's file plus this release.
+          previous=""
+          latest="$(gh release list --exclude-pre-releases --exclude-drafts \
+            --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          if [ -n "$latest" ]; then
+            mkdir -p previous
+            if gh release download "$latest" --pattern firmware-index.json \
+                 --dir previous --clobber 2>/dev/null; then
+              previous="--previous previous/firmware-index.json"
+            fi
+          fi
+
+          # shellcheck disable=SC2086  # $previous is empty or one flag pair.
+          python3 tools/firmware-index.py $previous \
+            --version "$VERSION" --tag "$TAG" \
+            --date "$(date -u -d "@$(git log -1 --format=%ct)" +%Y-%m-%dT%H:%M:%SZ)" \
+            --image "$image" \
+            --bytes "$(stat -c %s "dist/$image")" \
+            --sha256 "$(cut -d' ' -f1 "dist/$image.sha256")" \
+            --url "https://github.com/$GH_REPO/releases/download/$TAG/$image" \
+            --slot-bytes "$slot_bytes" \
+            --idf "$(sed -n 's/^idf //p' dist/build.txt)" \
+            --rust "$(sed -n 's/^rust //p' dist/build.txt)" \
+            --commit "$(git rev-parse --short=7 HEAD)" \
+            --notes "https://github.com/$GH_REPO/releases/tag/$TAG" \
+            --out dist/firmware-index.json
+
+          # The changelog section is the release body: one text, two places, so
+          # they cannot drift.
+          python3 - "$VERSION" > dist/section.md <<'PYTHON'
+          import pathlib, re, sys
+          version = sys.argv[1]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+                            text, re.M | re.S)
+          if match is None:
+              sys.exit(f"ERR CHANGELOG.md has no section for {version}")
+          print(match.group(1).strip())
+          PYTHON
+
+          {
+            echo "Easellet $VERSION, built by CI from \`$(git rev-parse --short=7 HEAD)\`."
+            echo
+            echo "| Asset | Size | SHA-256 |"
+            echo "| --- | --- | --- |"
+            for asset in "dist/$image" dist/bootloader.bin dist/partition-table.bin; do
+              name="$(basename "$asset")"
+              echo "| \`$name\` | $(stat -c %s "$asset") bytes | \`$(sha256sum "$asset" | cut -d' ' -f1)\` |"
+            done
+            echo
+            cat dist/section.md
+            echo
+            echo "### Installing it"
+            echo
+            echo "The frame updates itself from one of these images: use the bridge's"
+            echo "frame card, or the frame's own portal, which writes the image to the"
+            echo "slot it is not running from. Nothing is copied over a cable."
+            echo
+            echo "A bad image costs one reboot. The bootloader starts a new image as"
+            echo "unverified, the frame marks it valid once it reaches its console, and a"
+            echo "reset before that puts the previous slot back. The frame does not"
+            echo "update on its own: a person offers a version and confirms it."
+            echo
+            echo "\`firmware-index.json\` lists every release up to this one; the bridge"
+            echo "reads it to know what exists and what each image hashes to."
+          } > dist/body.md
+
+          # Draft, assets, publish: the store never shows half a release.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" -y
+          fi
+          gh release create "$TAG" --draft --title "Easellet $VERSION" \
+            --notes-file dist/body.md \
+            "dist/$image" "dist/$image.sha256" dist/bootloader.bin \
+            dist/partition-table.bin dist/firmware-index.json \
+            dist/build.txt
+          gh release edit "$TAG" --draft=false --latest

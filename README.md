@@ -94,9 +94,37 @@ of the other slot, so a copy that disagrees makes one slot lie about itself.
 | `scripts/release.sh <version>` | Checks, bumps every copy, writes the changelog section, commits `chore(release): <version>` and tags `v<version>`. It does not push. |
 | `cliff.toml` | The sections `git cliff` builds from the conventional commit subjects. |
 | `CHANGELOG.md` | `0.1.0` written by hand, later sections generated and committed. |
+| `tools/firmware-index.py` | Writes `firmware-index.json`, the list of releases the bridge reads. `--self-test` checks its merge rules. |
 
 Run a release on a clean `main`. Do not edit `CHANGELOG.md` or `sdkconfig.defaults`
 by hand: the next release overwrites both.
+
+### What a tag publishes
+
+Pushing the tag starts `.github/workflows/release.yml`. It checks that the tag names
+the version in the tree, that the commit is on `main` and that the changelog has a
+section for it, then builds the image with `scripts/build-firmware.sh <version>`.
+The release is created as a draft, gets its assets, and is published last, so a
+release never appears with half of them.
+
+| Asset | What it is for |
+| --- | --- |
+| `easellet-<version>.bin` | The application image. This is what an update writes. |
+| `easellet-<version>.bin.sha256` | The same hash as a file, for `sha256sum -c`. |
+| `bootloader.bin`, `partition-table.bin` | For a first serial flash. |
+| `firmware-index.json` | Every version up to this one: hash, size, slot size, toolchain, commit. |
+| `build.txt` | What the build printed: version, IDF, Rust, bytes, headroom, hash. |
+
+The release body is the changelog section, the three checksums and one paragraph on
+how to install the image and what a failed update costs. The same text is in two
+places by construction, not by a person copying it.
+
+### The `dev` release
+
+A green `main` publishes `firmware-dev` as a pre-release that is replaced, not
+appended to: one build of `0.1.0-dev+g<sha>`, its hash and an index with that single
+entry. It is not a version anybody should depend on, and every commit a person
+tests says which build it was. `ci.yml` builds it; no tag is involved.
 
 ## The gate on a server
 
