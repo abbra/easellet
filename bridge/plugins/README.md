@@ -224,9 +224,9 @@ plugin.items("CI", [("main", "ok"), ("nightly", "fail")], state={"seen": 2})
 
 `hello/` is a complete example in Python. `system/` is one in plain shell.
 
-`bridge/plugins/sdk/easellet_place.py` holds the place lookup that `sun` and `air`
-share: the Open-Meteo geocoder, the coordinates cache, and the words of a spoken
-question that name a place.
+`bridge/plugins/sdk/easellet_place.py` holds the place lookup that `weather`,
+`sun` and `air` share: the Open-Meteo geocoder, the coordinates cache, and the
+words of a spoken question that name a place.
 
 ## Trying it
 

@@ -15,6 +15,19 @@ import urllib.request
 
 AGENT = "easellet-bridge"
 PREPOSITIONS = {"в", "во", "на", "для", "у", "in", "at", "for"}
+# A place may also follow one of these words directly, without a preposition,
+# when the recogniser swallowed the preposition («покажи погоду ВСПУ» for
+# «в Эспоо»). Only a capitalised name counts after them, so «погода будет
+# завтра» names no place.
+TRIGGER_WORDS = {"погоду", "погода", "погоды", "weather"}
+# Words that belong to the question itself, so they never name a place even
+# when the geocoder knows a place with that name.
+QUESTION_WORDS = {
+    "сколько", "какой", "какая", "какое", "какие", "что", "чем", "где", "когда",
+    "почему", "зачем", "как", "куда", "откуда", "кто", "который", "которая",
+    "меня", "тебя", "нас", "вас", "него", "нее", "них", "себе",
+    "what", "when", "where", "why", "how", "which", "who",
+}
 TIME_WORDS = {
     "завтра", "сегодня", "послезавтра", "неделю", "неделе", "выходные", "выходных",
     "утро", "утром", "вечер", "вечером", "ближайшие", "дни", "дней",
@@ -79,13 +92,18 @@ def place_groups(question):
     the words after «во» are not a place, and only the geocoder can say so, so
     each group is tried and the first one that is a place wins. «покажи погоду в
     Эспоо на завтра» gives [«Эспоо»]: a preposition followed by a time word
-    («на завтра») introduces no place.
+    («на завтра») introduces no place. «покажи погоду Эспоо» gives [«Эспоо»],
+    because a capitalised name may follow the trigger word itself.
     """
     words = [word.strip(".,!?;:«»\"'()") for word in (question or "").split()]
     words = [word for word in words if word]
     groups = []
     for index, word in enumerate(words):
-        if fold(word) not in PREPOSITIONS:
+        if fold(word) in TRIGGER_WORDS:
+            following = words[index + 1 : index + 2]
+            if not following or not following[0][:1].isupper():
+                continue
+        elif fold(word) not in PREPOSITIONS:
             continue
         place = []
         for following in words[index + 1 : index + 4]:
@@ -115,9 +133,11 @@ def place_from_question(question, state):
                 while len(cached) > 20:
                     cached.pop(next(iter(cached)))
                 return cached[key]
-        # Only a capitalised word can be a place that the geocoder does not
-        # know; «сколько» is a word of the question, not a place.
-        if words and words[0][:1].isupper() and unknown is None:
+        # A group that is not part of the question itself may still name a
+        # place that the geocoder does not know; the plugin then says so
+        # instead of showing another place. A recogniser often writes no
+        # capital letters, so the words decide, not the case.
+        if unknown is None and not any(fold(word) in QUESTION_WORDS for word in words):
             unknown = key
     return unknown
 
