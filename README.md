@@ -396,8 +396,11 @@ latest result.
 A frame can show several jobs at once. The **Screen** section of its card chooses
 one of five layouts and the job that fills each slot: one panel, two rows, two
 columns, a main panel with a strip, or four panels. The bridge draws the whole
-panel once, so a change refreshes the panel once and not once per job. A frame
-with no screen keeps the priority rule. The bridge pushes a picture to frames that
+panel once, so a change refreshes the panel once and not once per job.
+A screen arranges only the jobs it names. A job that no slot names keeps its own
+full panel and its own priority, so a quarter-hour CI board and an hourly screen
+take the panel in turn as their content changes. A frame with no screen keeps the
+old priority rule: the newest of its highest-priority jobs. The bridge pushes a picture to frames that
 are awake and leaves it for sleeping frames to fetch on their timed wake
 (`bridge.url` on the frame). It never sends a picture again if it is identical to
 the one that a frame already shows. The run log is under the jobs.

@@ -17,7 +17,7 @@
 //! parameters may hold secrets (an API token for the CI plugin). Secret values
 //! are never sent back to the browser.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -757,8 +757,8 @@ impl Scheduler {
     }
 
     /// The picture a frame should show: a spoken answer or manual show while
-    /// its dwell lasts, else the frame's screen, else the newest
-    /// highest-priority panel.
+    /// its dwell lasts, else whichever of the screen and the jobs outside it
+    /// claims the panel hardest.
     pub fn next(&self, frame_id: &str, fonts: Option<&Fonts>) -> Option<Render> {
         let now = now_ms();
         if let Ok(overrides) = self.overrides.lock()
@@ -771,11 +771,66 @@ impl Scheduler {
                 job: "answer".to_owned(),
             });
         }
-        self.composed(frame_id, fonts)
+        self.owner(frame_id, fonts)
     }
 
     /// The screen itself, ignoring an answer that currently holds the frame.
     pub fn composed(&self, frame_id: &str, fonts: Option<&Fonts>) -> Option<Render> {
+        self.composed_with_claim(frame_id, fonts)
+            .map(|(render, _, _)| render)
+    }
+
+    /// Whichever claim on the panel is strongest: the screen's, or one job's
+    /// own whole-panel picture.
+    ///
+    /// A screen says where *its* jobs go, and nothing more. A job that no slot
+    /// names keeps its own panel and its own priority, so a fifteen-minute CI
+    /// board and an hourly screen take turns as their content changes instead of
+    /// one of them freezing the other out.
+    fn owner(&self, frame_id: &str, fonts: Option<&Fonts>) -> Option<Render> {
+        let screen = self.screen(frame_id);
+        let composed = self.composed_with_claim(frame_id, fonts);
+        let Some(screen) = screen else {
+            // No screen: the oldest rule, the newest highest-priority panel.
+            return composed.map(|(render, _, _)| render);
+        };
+        let used: BTreeSet<&str> = screen
+            .slots
+            .iter()
+            .map(String::as_str)
+            .filter(|id| !id.is_empty())
+            .collect();
+        let mut best = composed.map(|(render, priority, at_ms)| ((priority, at_ms), render));
+        let outbox = self.outbox.lock().ok()?;
+        for (job, slot) in outbox.get(frame_id)?.iter() {
+            if used.contains(job.as_str()) {
+                continue;
+            }
+            let image = slot.panel.frame(fonts).ok()?;
+            let claim = (slot.priority, slot.at_ms);
+            let wins = best.as_ref().is_none_or(|(mine, _)| claim > *mine);
+            if wins {
+                best = Some((
+                    claim,
+                    Render {
+                        hash: content_hash(&image),
+                        image: Arc::new(image),
+                        job: job.clone(),
+                    },
+                ));
+            }
+        }
+        best.map(|(_, render)| render)
+    }
+
+    /// The screen's picture, and the claim it makes on the panel: the highest
+    /// priority among the slots it actually filled, and the newest of their
+    /// times. A screen with no filled slot has no claim and no picture.
+    fn composed_with_claim(
+        &self,
+        frame_id: &str,
+        fonts: Option<&Fonts>,
+    ) -> Option<(Render, u8, u64)> {
         let now = now_ms();
         let screen = self.screen(frame_id);
         let preset = screen
@@ -784,7 +839,7 @@ impl Scheduler {
             .unwrap_or(Preset::Single);
         let outbox = self.outbox.lock().ok()?;
         let panels = outbox.get(frame_id)?;
-        let (image, job) = if preset == Preset::Single {
+        let (image, job, claim) = if preset == Preset::Single {
             // A saved one-panel screen names the job it wants; without one, the
             // frame keeps the old priority rule.
             let chosen = screen
@@ -798,29 +853,48 @@ impl Scheduler {
                     .iter()
                     .max_by_key(|(_, slot)| (slot.priority, slot.at_ms))?,
             };
-            (slot.panel.frame(fonts).ok()?, job.clone())
+            (
+                slot.panel.frame(fonts).ok()?,
+                job.clone(),
+                (slot.priority, slot.at_ms),
+            )
         } else {
             let order: Vec<String> = screen
                 .as_ref()
                 .map(|screen| screen.slots.clone())
                 .unwrap_or_default();
             let mut tiles: Vec<Option<Tile>> = Vec::with_capacity(preset.cells().len());
+            let mut fill: Vec<&Slot> = Vec::new();
             for index in 0..preset.cells().len() {
                 let slot = order.get(index).and_then(|id| panels.get(id));
+                if let Some(slot) = slot {
+                    fill.push(slot);
+                }
                 tiles.push(slot.map(|slot| Tile {
                     panel: &slot.panel,
                     stale: stale(slot, now),
                 }));
             }
-            let image = compose::render(preset, &tiles, fonts?).ok()?;
-            (image, "screen".to_owned())
+            // Nothing to draw means no claim at all: an empty screen must not
+            // blank a panel that a job is already filling.
+            let priority = fill.iter().map(|slot| slot.priority).max()?;
+            let at_ms = fill.iter().map(|slot| slot.at_ms).max()?;
+            (
+                compose::render(preset, &tiles, fonts?).ok()?,
+                "screen".to_owned(),
+                (priority, at_ms),
+            )
         };
         let hash = content_hash(&image);
-        Some(Render {
-            image: Arc::new(image),
-            hash,
-            job,
-        })
+        Some((
+            Render {
+                image: Arc::new(image),
+                hash,
+                job,
+            },
+            claim.0,
+            claim.1,
+        ))
     }
 
     /// Hold `image` on the frame for `dwell`, so the next scheduled screen does
@@ -958,13 +1032,40 @@ mod tests {
             preset: "single".to_owned(),
             slots: vec!["calm".to_owned()],
         });
-        scheduler.queue_for_test("f", "calm", notice("выбран"), 0);
-        scheduler.queue_for_test("f", "urgent", notice("приоритет"), 9);
+        scheduler.queue_for_test("f", "calm", notice("выбран"), 5);
+        scheduler.queue_for_test("f", "looked_over", notice("рядом"), 9);
+        // `looked_over` is not a slot, so it keeps its own claim and wins on
+        // priority; the screen does not lock the panel away from it.
         assert_eq!(
             scheduler.next("f", Some(&fonts())).unwrap().job,
-            "calm",
-            "a saved screen chooses the panel, not the priority"
+            "looked_over"
         );
+    }
+
+    #[test]
+    fn a_screen_outranks_an_outside_job_that_claims_less() {
+        let scheduler = Scheduler::load(Path::new("/nonexistent/jobs.toml")).unwrap();
+        scheduler.set_screen_for_test(Screen {
+            frame: "f".to_owned(),
+            preset: "columns".to_owned(),
+            slots: vec!["weather".to_owned(), "spot".to_owned()],
+        });
+        scheduler.queue_for_test("f", "weather", notice("Погода"), 4);
+        scheduler.queue_for_test("f", "spot", notice("Цена"), 4);
+        scheduler.queue_for_test("f", "ci", notice("Проверки"), 3);
+        let fonts = fonts();
+        assert_eq!(
+            scheduler.next("f", Some(&fonts)).unwrap().job,
+            "screen",
+            "the screen takes the strongest priority of its slots"
+        );
+        // A CI board that now claims harder takes the panel until a slot job
+        // changes again, so the two take turns instead of one freezing out the
+        // other.
+        if let Ok(mut outbox) = scheduler.outbox.lock() {
+            outbox.get_mut("f").unwrap().get_mut("ci").unwrap().priority = 6;
+        }
+        assert_eq!(scheduler.next("f", Some(&fonts)).unwrap().job, "ci");
     }
 
     #[test]
@@ -976,6 +1077,22 @@ mod tests {
             slots: vec!["a".to_owned()],
         });
         assert!(scheduler.next("f", Some(&fonts())).is_none());
+    }
+
+    #[test]
+    fn an_empty_screen_does_not_blank_a_filled_panel() {
+        let scheduler = Scheduler::load(Path::new("/nonexistent/jobs.toml")).unwrap();
+        scheduler.set_screen_for_test(Screen {
+            frame: "f".to_owned(),
+            preset: "hero".to_owned(),
+            slots: vec![String::new(), String::new(), String::new()],
+        });
+        scheduler.queue_for_test("f", "job", notice("Погода"), 0);
+        assert_eq!(
+            scheduler.next("f", Some(&fonts())).unwrap().job,
+            "job",
+            "a screen with no filled slot claims nothing"
+        );
     }
 
     #[test]
