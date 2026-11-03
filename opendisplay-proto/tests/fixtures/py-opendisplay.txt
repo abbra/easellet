@@ -1,0 +1,16 @@
+# The upstream Python client the fixture checks are written against.
+#
+# `opendisplay-proto/build.sh test` runs three scripts in
+# `.tools/venv-opendisplay`: it replays the requests and answers the crate's own
+# tests wrote, and checks that the upstream client parses them. The client is
+# cloned at this commit rather than taken from PyPI, because the protocol moves
+# in the repository first and a release may lag a header change.
+#
+# The `wifi` extra brings zeroconf, which `check_mdns_responses.py` imports.
+#
+#   python3 -m venv .tools/venv-opendisplay
+#   .tools/venv-opendisplay/bin/pip install -e "<clone>[wifi]"
+#
+# To update: clone a newer commit, run `./build.sh test`, and record the sha here.
+url https://github.com/OpenDisplay/py-opendisplay
+commit 48473123053dd5193fb15b8e7aa486410a7f919a

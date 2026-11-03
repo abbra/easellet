@@ -69,14 +69,65 @@ The build writes these outputs to `target/xtensa-esp32s3-espidf/debug/`:
 
 The check script runs these steps:
 
-1. Formatting.
-2. Native tests for the parser, decoder, framebuffer and image loader.
-3. Clippy for the cross target.
-4. The firmware build.
-5. Image conversion.
+1. The version in every copy (`tools/check-version.py`).
+2. Formatting.
+3. Native tests for the parser, decoder, framebuffer and image loader.
+4. Clippy for the cross target.
+5. The firmware build, in both profiles.
+6. Image conversion, in both languages and both directions.
+7. The two host crates.
 
 `cargo test` alone does not run the parser tests. The firmware binary has its
 embedded test harness disabled.
+
+## Releases
+
+`Cargo.toml` holds the version. The two other manifests, the three lock files,
+`sdkconfig.defaults` and `CHANGELOG.md` name it too. The frame reports the version
+Cargo was built with, and it reports `CONFIG_APP_PROJECT_VER` as the description
+of the other slot, so a copy that disagrees makes one slot lie about itself.
+
+| Piece | What it does |
+| --- | --- |
+| `tools/check-version.py` | Compares every copy, and the tag when one is given. `scripts/check.sh` runs it first. |
+| `scripts/build-firmware.sh <version>` | Builds one image that says `<version>`, and prints its size, headroom and SHA-256. A dev build says `0.1.0-dev+g<sha>`. |
+| `scripts/release.sh <version>` | Checks, bumps every copy, writes the changelog section, commits `chore(release): <version>` and tags `v<version>`. It does not push. |
+| `cliff.toml` | The sections `git cliff` builds from the conventional commit subjects. |
+| `CHANGELOG.md` | `0.1.0` written by hand, later sections generated and committed. |
+
+Run a release on a clean `main`. Do not edit `CHANGELOG.md` or `sdkconfig.defaults`
+by hand: the next release overwrites both.
+
+## The gate on a server
+
+`.github/workflows/ci.yml` runs five checks on every pull request and every push
+to `main`: the host crates, the web tools, the firmware, a smoke run of the real
+bridge, and the version. It never flashes a frame and it needs no secret.
+
+Every job runs in a Fedora container built from the `Containerfile` at the root of
+the repository. GitHub offers Ubuntu, Windows and macOS runners and no Fedora
+runner. The container gives the toolchain this project builds with: Fedora's
+cargo, alsa-lib and glibc for the host crates, and Fedora's cargo plus Xtensa for
+the firmware.
+
+The same image runs here, which is how a broken `Containerfile` is found before a
+push:
+
+```bash
+podman build -t easellet-ci .
+podman run --rm -it -v "$PWD:/w:z" -w /w easellet-ci
+```
+
+Three checks run in CI have a local command. They cover things that only a
+browser, a running server or a link walker finds:
+
+```bash
+npm --prefix tools ci                  # once: puppeteer-core, a browser driver
+node tools/run-portal-harness.mjs      # the portal's 25 checks, in a browser
+./bridge/build.sh test                 # builds the bridge binary too
+python3 tools/bridge-smoke.py          # starts it and asks what it serves
+python3 tools/check-docs.py            # fences, tabs and relative links
+```
 
 ## USB diagnostic protocol (after approved flashing)
 
