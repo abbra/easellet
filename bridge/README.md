@@ -186,6 +186,10 @@ the frame to come back with the new version, and say what happened. A reset in t
 middle of the POST is the normal ending, not a failure: the frame restarts as soon
 as it has written the slot, so the bridge asks it rather than guessing.
 
+The version it waits for is the one in the frame's image description, which is the
+same string `firmware-index.json` names a release by. `Cargo.toml`'s number is only
+a fallback, for an image that carries no description.
+
 The bridge refuses an install when the version is already running, when an install
 on that frame is already in flight, when the frame is asleep, when the image is
 larger than the frame's slot, and when the release was built for a different

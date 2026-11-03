@@ -1037,7 +1037,15 @@ fn read_ota(context: &Context, id: &str) -> Result<serde_json::Value, Response> 
     };
     let answer = match frames::portal(&host, &password, "GET", "/ota", &[]) {
         Ok(answer) => answer,
-        Err(error) => return Err(Response::text(502, format!("ERR {error}\n"))),
+        // A frame that is asleep is the common case, so it is named; the reason
+        // follows it, because a reboot, a wrong password and a wrong address
+        // would otherwise all read as sleep.
+        Err(error) => {
+            return Err(Response::text(
+                502,
+                format!("ERR the frame is asleep or has no portal ({error}); it must be awake\n"),
+            ));
+        }
     };
     if answer.status != 200 {
         let text = String::from_utf8_lossy(&answer.body).trim().to_owned();
@@ -1144,12 +1152,9 @@ fn frame_firmware_start(context: &Context, path: &str, body: &[u8]) -> Response 
     }
     let ota = match read_ota(context, id) {
         Ok(ota) => ota,
-        Err(_) => {
-            return Response::text(
-                409,
-                "ERR the frame is asleep or has no portal; it must be awake\n",
-            );
-        }
+        // The read already says why (it could not connect, or the frame refused
+        // `GET /ota`); flattening it to one sentence hid a reboot in progress.
+        Err(reason) => return reason,
     };
     if let Err(error) = crate::firmware::check(&release, &ota) {
         return Response::text(409, format!("ERR {error}\n"));
