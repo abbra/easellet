@@ -579,7 +579,7 @@ async function loadPlugins() {
     $("plugin-jump-row").hidden = plugins.length === 0;
     $("plugin-list").replaceChildren(
       ...(plugins.length
-        ? arranged.map(([id, list]) => pluginGroup(id, list, frames))
+        ? arranged.map(([id, list]) => pluginGroup(id, list, frames, dirs))
         : [text("p", t("plugins.empty", { dirs: dirs.join(", ") }), "empty")]),
     );
     $("plugin-problems").textContent = problems.length
@@ -591,17 +591,31 @@ async function loadPlugins() {
 }
 
 /// One group of the Plugins tab: a heading and its closed sections.
-function pluginGroup(id, plugins, frames) {
+function pluginGroup(id, plugins, frames, roots) {
   const section = document.createElement("section");
   section.className = "plugin-group";
   section.append(
     text("h3", groupName(id)),
-    ...plugins.map((plugin) => pluginCard(plugin, frames)),
+    ...plugins.map((plugin) => pluginCard(plugin, frames, roots)),
   );
   return section;
 }
 
-function pluginCard(plugin, frames) {
+/// A plugin's directory as the page names it: relative to the plugins directory
+/// that holds it, which is named by the directory above it. A built-in plugin
+/// therefore reads `bridge/air` and one of your own `easellet-bridge/…`, where
+/// the full path would run off the end of the row and say nothing more.
+function shortDir(dir, roots) {
+  const root = roots
+    .filter((candidate) => dir === candidate || dir.startsWith(`${candidate}/`))
+    .sort((a, b) => b.length - a.length)[0];
+  if (!root) return dir;
+  const name = root.split("/").filter(Boolean).slice(-2, -1)[0] ?? root;
+  const rest = dir.slice(root.length).replace(/^\//, "");
+  return rest ? `${name}/${rest}` : name;
+}
+
+function pluginCard(plugin, frames, roots) {
   // A closed section: eight plugins' worth of forms is a wall of fields, and
   // the one being used is the one that should be on screen.
   const element = document.createElement("details");
@@ -610,7 +624,7 @@ function pluginCard(plugin, frames) {
   const summary = document.createElement("summary");
   summary.append(
     text("span", localized(plugin, "title"), "title"),
-    text("span", `${plugin.name} · ${plugin.dir}`, "where"),
+    text("span", shortDir(plugin.dir, roots), "where"),
   );
   const inner = document.createElement("div");
   inner.className = "plugin-inner";

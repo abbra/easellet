@@ -17,6 +17,10 @@ bridge/plugins/<name>/                        the ones shipped with the bridge
 `<name>` is `[a-z0-9-]`, at most 32 characters, and must equal `name` in the
 manifest. A plugin in your directory replaces a shipped plugin of the same name.
 
+The web UI names a plugin's directory relative to the plugins directory that holds
+it, and names that directory by the one above it: a shipped plugin reads
+`bridge/air`, one of your own `easellet-bridge/my-thing`.
+
 ## The manifest
 
 ```toml
