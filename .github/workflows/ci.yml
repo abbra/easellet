@@ -6,6 +6,9 @@
 # link against Fedora's alsa-lib and glibc, and the firmware toolchain is Fedora's
 # cargo plus Xtensa.
 #
+# The image is built and pushed with podman, the tool the same `Containerfile`
+# builds with here; no job uses Docker.
+#
 # The image tag is the first twelve hex digits of the hash of its inputs:
 #
 #   cat Containerfile tools/requirements.txt tools/package-lock.json \
@@ -24,6 +27,9 @@ on:
 
 permissions:
   contents: read
+  # The jobs run in a published image, and a package made by a workflow is
+  # private until someone changes that, so reading packages is not optional.
+  packages: read
 
 # A second push to the same branch makes the first run pointless.
 concurrency:
@@ -49,7 +55,8 @@ jobs:
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          if [ -z "$base" ] || [ "$base" = "07fa785ca23c07fa785ca23c07fa785ca23c0000" ] \
+          # A new branch pushes the all-zero sha, which no clone contains.
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
              || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
             files="$(git ls-files)"
           else
@@ -87,20 +94,39 @@ jobs:
             echo "::error::the Containerfile, tools/requirements.txt or tools/package-lock.json changed: set CI_IMAGE and every container image to $image"
             exit 1
           fi
-      - name: Pull the image, or build and publish it
+      - name: Let podman run rootless
         run: |
           set -euo pipefail
-          if docker pull "$CI_IMAGE"; then
+          podman --version
+          # The runner image installs podman and buildah but not the two things a
+          # rootless container needs beyond them, and says nothing about either.
+          if ! grep -q "^${USER}:" /etc/subuid; then
+            echo "${USER}:524288:65536" | sudo tee --append /etc/subuid /etc/subgid >/dev/null
+          fi
+          if ! podman info >/dev/null 2>&1; then
+            # Ubuntu 24.04 restricts unprivileged user namespaces, which is
+            # exactly what a rootless container is.
+            sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          podman info --format 'rootless={{.Host.Security.Rootless}} storage={{.Store.GraphDriverName}}'
+      - name: Pull the image, or build and publish it
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | podman login --username "${{ github.actor }}" --password-stdin ghcr.io
+          if podman pull "$CI_IMAGE"; then
             echo "already published"
             exit 0
           fi
-          docker build --tag "$CI_IMAGE" .
+          # No `--file`: podman and buildah look for a `Containerfile` before a
+          # `Dockerfile`, and this repository has the former.
+          podman build --tag "$CI_IMAGE" .
           # A pull request from a fork has no packages: write. Its build proves
           # the image still builds; the tag itself has to come from main.
-          if [ "${{ github.event_name }}" = push ] \
-             || [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-            echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-            docker push "$CI_IMAGE"
+          if [ "$EVENT" = push ] || [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
+            podman push "$CI_IMAGE"
           else
             echo "::warning::built but not published: a fork cannot push to the registry, so the tag must exist from main"
           fi
