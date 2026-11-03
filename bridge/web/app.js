@@ -929,7 +929,7 @@ function text(tag, content, className) {
 }
 
 function renderTurns(turns) {
-  $("history-count").textContent = `${turns.length}`;
+  $("history-count").textContent = tCount("history.count", turns.length);
   if (!turns.length) {
     $("turns").replaceChildren(text("p", t("history.empty"), "empty"));
     return;
