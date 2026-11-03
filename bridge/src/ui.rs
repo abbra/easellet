@@ -240,6 +240,9 @@ pub fn handle(request: Request<'_>, context: &Context) -> Response {
         }
         ("POST", "/api/frames/add") => add_frame(context, &request.body),
         ("POST", "/api/frames/remove") => remove_frame(context, &request.body),
+        ("GET", path) if path.starts_with("/api/frames/") && path.ends_with("/screen.png") => {
+            screen_png(context, path)
+        }
         (method, path) if path.starts_with("/api/frames/") => frame_action(
             context,
             method,
@@ -898,6 +901,31 @@ fn remove_frame(context: &Context, body: &[u8]) -> Response {
     response
 }
 
+/// `/api/frames/<id>/screen.png`: the frame's screen as a PNG. It does not need
+/// the frame to be awake or even discovered, so a screen can be checked while
+/// the panel sleeps.
+fn screen_png(context: &Context, path: &str) -> Response {
+    let id = path
+        .trim_start_matches("/api/frames/")
+        .trim_end_matches("/screen.png")
+        .trim_end_matches('/');
+    match context.scheduler.composed(id, context.fonts.as_deref()) {
+        Some(screen) => match render::png(
+            &render::unpack(&screen.image),
+            render::WIDTH,
+            render::HEIGHT,
+        ) {
+            Ok(png) => {
+                let mut response = Response::new(200, "image/png", png);
+                response.headers.push(("X-Screen", screen.job.clone()));
+                response
+            }
+            Err(error) => Response::text(500, format!("ERR png: {error}\n")),
+        },
+        None => Response::new(204, "text/plain; charset=utf-8", Vec::new()),
+    }
+}
+
 /// `/api/frames/<id>/<action>`: the portal proxy and OpenDisplay delivery.
 fn frame_action(
     context: &Context,
@@ -941,21 +969,6 @@ fn frame_action(
     match (method, action) {
         ("GET", "gallery") => forward("GET", "/gallery", &[]),
         ("GET", "sensors") => forward("GET", "/sensors", &[]),
-        ("GET", "screen") => match context.scheduler.composed(id, context.fonts.as_deref()) {
-            Some(screen) => match render::png(
-                &render::unpack(&screen.image),
-                render::WIDTH,
-                render::HEIGHT,
-            ) {
-                Ok(png) => {
-                    let mut response = Response::new(200, "image/png", png);
-                    response.headers.push(("X-Screen", screen.job.clone()));
-                    response
-                }
-                Err(error) => Response::text(500, format!("ERR png: {error}\n")),
-            },
-            None => Response::new(204, "text/plain; charset=utf-8", Vec::new()),
-        },
         ("POST", "screen") => {
             let panel = context
                 .frames
@@ -1451,6 +1464,26 @@ mod tests {
             .1
             .clone();
         assert_eq!(pull(&context, path, auth, Some(&etag)).status, 304);
+    }
+
+    #[test]
+    fn a_screen_preview_does_not_need_an_awake_frame() {
+        let (context, _dir) = context(Settings::default());
+        let path = "/api/frames/94a990caed46/screen.png";
+        let empty = handle(get(path, "192.168.50.93"), &context);
+        assert_eq!(empty.status, 204, "no tiles yet");
+
+        let card: crate::render::Card =
+            serde_json::from_str(r#"{"layout":"notice","title":"test"}"#).unwrap();
+        context.scheduler.queue_for_test(
+            "94a990caed46",
+            "test",
+            crate::compose::Panel::Card(card),
+            0,
+        );
+        let rendered = handle(get(path, "192.168.50.93"), &context);
+        assert_eq!(rendered.status, 200, "the frame is not in the registry");
+        assert_eq!(&rendered.body[1..4], b"PNG");
     }
 
     #[test]
