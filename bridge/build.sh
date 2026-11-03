@@ -27,6 +27,10 @@ case "${1:-test}" in
         # this package: it is a separate manifest, not a workspace member.
         "$cargo_bin" fmt --check --manifest-path "$here/Cargo.toml"
         "$cargo_bin" test --quiet --manifest-path "$here/Cargo.toml"
+        # `cargo test` builds the test harnesses and leaves the executable alone,
+        # and tools/bridge-smoke.py starts that executable to ask the real server
+        # what it serves. Building it here keeps one command enough for both.
+        "$cargo_bin" build --quiet --manifest-path "$here/Cargo.toml"
         ;;
     run)
         shift
