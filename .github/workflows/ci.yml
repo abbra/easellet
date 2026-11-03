@@ -210,13 +210,34 @@ jobs:
           restore-keys: |
             target-${{ hashFiles('Cargo.lock', '.github/esp-toolchain.txt') }}-
       - name: The toolchain
+        env:
+          # espup asks GitHub which Xtensa Rust is the newest before it installs
+          # one. An anonymous caller gets 60 requests an hour for its address and
+          # the hosted runners share theirs, so a busy morning fails the job with
+          # "rate limit exceeded"; with a token the limit is the repository's own.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           source scripts/env.sh
           # rustup's shims have to exist in the project's cargo home; Fedora's
           # cargo is what builds the host crates and stays untouched.
           rustup-init -y --no-modify-path --default-toolchain none
-          espup install --targets esp32s3 --export-file .tools/export-esp.sh
+          # A restored cache already holds the toolchain and its export file, so
+          # there is nothing to install and nothing to ask GitHub about.
+          if [ -f .tools/export-esp.sh ] && rustup toolchain list | grep -q '^esp'; then
+            echo "the cached toolchain is in place"
+          else
+            espup install --targets esp32s3 --export-file .tools/export-esp.sh
+          fi
+          # `.github/esp-toolchain.txt` is a pin only if something compares it:
+          # espup installs the newest Xtensa Rust it can find, and this is what
+          # stops a build from depending on the day.
+          pin="$(sed -n 's/^xtensa-rust //p' .github/esp-toolchain.txt)"
+          got="$(rustc --version | sed -n 's/.*(\([0-9][0-9.]*\))$/\1/p')"
+          if [ "$got" != "$pin" ]; then
+            echo "ERR the toolchain is ${got:-unknown}, the pin says $pin" >&2
+            exit 1
+          fi
           # `scripts/check.sh` runs esptool from `.venv-tools`; the image's Python
           # already has esptool and Pillow, so the venv only has to see them.
           python3 -m venv --system-site-packages .venv-tools
