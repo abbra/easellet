@@ -1,0 +1,32 @@
+name = "spot"
+title = "Электричество"
+description = "Цена электричества Nord Pool для Финляндии и Балтии: сейчас, дешёвые и дорогие часы, тренд на завтра. Без ключа."
+i18n = { en = { title = "Electricity", description = "The Nord Pool electricity price for Finland and the Baltics: now, the cheapest and dearest hours, and tomorrow's trend. No key." } }
+run = "run.py"
+timeout_s = 20
+outputs = ["card", "none"]
+default_every = "15m"
+
+[[param]]
+id = "zone"
+type = "choice"
+title = "Зона"
+required = true
+default = "fi"
+choices = ["fi", "ee", "lt", "lv"]
+note = "Биржевая зона Nord Pool. Цена показана с НДС страны: Финляндия 25,5 %, Эстония 24 %, Литва и Латвия 21 %."
+i18n = { en = { title = "Zone", note = "A Nord Pool bidding zone. The price includes the country's VAT: Finland 25.5 %, Estonia 24 %, Lithuania and Latvia 21 %." } }
+
+[[param]]
+id = "question"
+type = "text"
+title = "Вопрос"
+hidden = true
+note = "Заполняет ассистент. Плагин не читает вопрос: он показывает выбранную зону."
+i18n = { en = { title = "Question", note = "Filled by the assistant. The plugin does not read the question: it shows the configured zone." } }
+
+[assistant]
+text_param = "question"
+intent = "показать цену электричества"
+phrases = ["цена электричества", "цена на электричество", "сколько стоит электричество", "почём электричество", "почем электричество", "electricity price", "price of electricity", "spot price"]
+description = "Show the Nord Pool electricity price on the frame."

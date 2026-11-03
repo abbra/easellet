@@ -380,7 +380,7 @@ and asks for speech.
 
 Plugins (`bridge/plugins/README.md`) produce cards or pictures. The Plugins tab
 lists each plugin as a closed section and opens one section at a time. This prevents
-the page from showing all fields for eleven plugins at once. A selector at the top
+the page from showing all fields for twelve plugins at once. A selector at the top
 jumps to a named plugin. The tab previews a plugin and saves it as a **job**: a plugin, its
 parameters, the frames, an interval and a priority. The bridge keeps jobs in
 `~/.config/easellet-bridge/jobs.toml` (owner-only). Secret parameters are
@@ -431,6 +431,13 @@ The air plugin shows the European AQI and its band, the PM2.5 and PM10 particles
 pollen that is in the air and, from 1, the UV index. It reads Open-Meteo like the
 weather plugin, so it needs no key, and it takes the place from the question («какой
 воздух в Эспоо»).
+
+The spot plugin shows the Nord Pool electricity price for Finland, Estonia,
+Lithuania or Latvia: the current hour, the cheapest and dearest two hours ahead,
+and tomorrow against today. It reads the Elering dashboard, so it needs no key,
+and it adds the VAT of the country. The default interval is 15 minutes, so the
+card shows a new hour within a quarter of an hour. The card answers `none` when
+its rows do not change, so the panel is not refreshed between hours.
 
 The agenda plugin reads an iCalendar (`.ics`) calendar: a private address, a
 `file://` address, or a path on the bridge host. By voice, the day comes from the

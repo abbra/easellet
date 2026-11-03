@@ -152,6 +152,7 @@ Card layouts:
 | `weather` | A forecast for a place. By voice, for the place named («…погоду в Эспоо», "…weather in Espoo"). | Nothing (Open-Meteo). |
 | `sun` | Sunrise, sunset, the length of the day and the moon phase for a place. | Nothing (Open-Meteo). |
 | `air` | Air quality (European AQI), particles and pollen for a place. | Nothing (Open-Meteo). |
+| `spot` | The Nord Pool electricity price for Finland, Estonia, Lithuania or Latvia: the current hour, the cheapest and dearest two hours ahead, and tomorrow against today. | Nothing (Elering). |
 | `agenda` | The next events of an iCalendar calendar. By voice, for the day named («что у меня завтра», "what is on tomorrow"). | A calendar address, a file, or a path. No key. |
 | `news` | Headlines of an RSS/Atom feed. | A feed URL. |
 | `ci` | The latest open PRs of a GitHub repository, each with how many checks failed, ran and passed (Actions and external CI). | A read-only token (see below). |
@@ -183,6 +184,16 @@ types that are above zero, and the UV index from 1. It takes the place from the
 question the way `weather` does («какой воздух в Эспоо»), and it names the place that
 it shows when it speaks.
 
+`spot` reads the Nord Pool day-ahead prices from Elering's dashboard, in EUR per MWh
+and without tax, and adds the VAT of the zone. Nord Pool quotes 15-minute periods.
+The card averages the periods of each local hour, so the panel changes at the start
+of an hour and not every quarter. The cheapest and dearest rows are two-hour
+windows that start in the current hour or later and end within the next day. The
+last row compares the mean of tomorrow with the mean of today. A day-ahead auction
+publishes a whole day, so a partial day has no mean on the card. The card answers
+`none` when its rows do not change, and a run in the same hour asks for no prices
+again. The default interval is 15 minutes, so the card follows the hour.
+
 `ci` counts both kinds of CI reports on a PR's head commit: check runs (GitHub
 Actions and other apps) and commit statuses (external CI). Its token is a GitHub
 **fine-grained personal access token** (Settings → Developer settings → Personal
@@ -197,8 +208,8 @@ carries a yellow line that says so. Without a token, GitHub allows 60 requests a
 hour, which is enough for three PRs per run. `api` points the plugin at GitHub
 Enterprise.
 
-`news`, `ci`, `sun` and `air` answer `none` when nothing changed, so an unchanged
-feed, CI board or reading never refreshes the panel.
+`news`, `ci`, `sun`, `air` and `spot` answer `none` when nothing changed, so an
+unchanged feed, CI board, sky or price never refreshes the panel.
 
 The bridge stores `state` and hands it back as `state` on the next run, per plugin
 and frame. A plugin can therefore remember an ETag or the last thing that it showed
