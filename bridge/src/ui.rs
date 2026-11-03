@@ -208,6 +208,26 @@ pub fn handle(request: Request<'_>, context: &Context) -> Response {
                 .run_now(id, context)
                 .map(|runs| serde_json::json!({"runs": runs}))
         }),
+        ("GET", "/api/screens") => Response::json(
+            200,
+            &serde_json::json!({"screens": context.scheduler.screens()}),
+        ),
+        ("POST", "/api/screens/save") => job_request(&request.body, |request| {
+            context
+                .scheduler
+                .save_screen(request)
+                .map(|frame| serde_json::json!({"saved": frame}))
+        }),
+        ("POST", "/api/screens/delete") => job_request(&request.body, |request| {
+            let frame = request
+                .get("frame")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            context
+                .scheduler
+                .delete_screen(frame)
+                .map(|()| serde_json::json!({"deleted": frame}))
+        }),
         ("POST", path) if path.starts_with("/api/plugins/") => {
             plugin_action(context, &path["/api/plugins/".len()..], &request.body)
         }
@@ -921,6 +941,49 @@ fn frame_action(
     match (method, action) {
         ("GET", "gallery") => forward("GET", "/gallery", &[]),
         ("GET", "sensors") => forward("GET", "/sensors", &[]),
+        ("GET", "screen") => match context.scheduler.composed(id, context.fonts.as_deref()) {
+            Some(screen) => match render::png(
+                &render::unpack(&screen.image),
+                render::WIDTH,
+                render::HEIGHT,
+            ) {
+                Ok(png) => {
+                    let mut response = Response::new(200, "image/png", png);
+                    response.headers.push(("X-Screen", screen.job.clone()));
+                    response
+                }
+                Err(error) => Response::text(500, format!("ERR png: {error}\n")),
+            },
+            None => Response::new(204, "text/plain; charset=utf-8", Vec::new()),
+        },
+        ("POST", "screen") => {
+            let panel = context
+                .frames
+                .list()
+                .into_iter()
+                .find(|frame| frame.id == id)
+                .and_then(|frame| frame.panel);
+            match panel {
+                Some(panel)
+                    if usize::from(panel.width) * usize::from(panel.height) / 2
+                        == render::FRAME_BYTES =>
+                {
+                    let Some(screen) = context.scheduler.composed(id, context.fonts.as_deref())
+                    else {
+                        return Response::text(409, "ERR the screen has nothing to show yet\n");
+                    };
+                    match frames::display(&host, port, &screen.image) {
+                        Ok(message) => {
+                            context.scheduler.clear_override(id);
+                            context.scheduler.mark_shown(id, screen.hash);
+                            Response::text(200, format!("{message}\n"))
+                        }
+                        Err(error) => Response::text(502, format!("ERR {error}\n")),
+                    }
+                }
+                _ => Response::text(409, "ERR the frame's panel is not known or not 800x480\n"),
+            }
+        }
         ("GET", "queued") => match context.scheduler.next(id, context.fonts.as_deref()) {
             Some(queued) => match render::png(
                 &render::unpack(&queued.image),
@@ -1388,6 +1451,47 @@ mod tests {
             .1
             .clone();
         assert_eq!(pull(&context, path, auth, Some(&etag)).status, 304);
+    }
+
+    #[test]
+    fn screens_are_listed_and_deleted_from_the_ui() {
+        let (context, _dir) = context(Settings::default());
+        fn post<'a>(url: &'a str, body: &'a str) -> Request<'a> {
+            Request {
+                method: "POST",
+                url,
+                host: Some("192.168.50.93"),
+                authorization: None,
+                marked: true,
+                body: body.as_bytes().to_vec(),
+            }
+        }
+
+        let empty = handle(get("/api/screens", "192.168.50.93"), &context);
+        assert_eq!(empty.status, 200);
+        let document: serde_json::Value = serde_json::from_slice(&empty.body).unwrap();
+        assert_eq!(document["screens"], serde_json::json!([]));
+
+        let refused = handle(post("/api/screens/save", r#"{"frame":""}"#), &context);
+        assert_eq!(refused.status, 400);
+        assert!(String::from_utf8_lossy(&refused.body).contains("frame"));
+        let missing = handle(post("/api/screens/delete", r#"{"frame":"f"}"#), &context);
+        assert_eq!(missing.status, 400);
+
+        context.scheduler.set_screen_for_test(crate::jobs::Screen {
+            frame: "f".to_owned(),
+            preset: "single".to_owned(),
+            slots: Vec::new(),
+        });
+        let listed = handle(get("/api/screens", "192.168.50.93"), &context);
+        let document: serde_json::Value = serde_json::from_slice(&listed.body).unwrap();
+        assert_eq!(document["screens"][0]["frame"], "f");
+
+        let deleted = handle(post("/api/screens/delete", r#"{"frame":"f"}"#), &context);
+        assert_eq!(deleted.status, 200);
+        let empty = handle(get("/api/screens", "192.168.50.93"), &context);
+        let document: serde_json::Value = serde_json::from_slice(&empty.body).unwrap();
+        assert_eq!(document["screens"], serde_json::json!([]));
     }
 
     #[test]

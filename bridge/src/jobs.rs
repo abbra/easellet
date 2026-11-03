@@ -271,6 +271,99 @@ impl Scheduler {
         std::fs::rename(&temporary, &self.path).map_err(|error| error.to_string())
     }
 
+    /// Every screen, as saved.
+    pub fn screens(&self) -> Vec<Screen> {
+        self.jobs
+            .read()
+            .map(|jobs| jobs.screens.clone())
+            .unwrap_or_default()
+    }
+
+    /// Add or replace the screen of a frame. A slot names a saved job that
+    /// shows on this frame; an empty string leaves the slot blank.
+    pub fn save_screen(&self, request: &serde_json::Value) -> Result<String, String> {
+        let frame = request
+            .get("frame")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        if frame.is_empty() {
+            return Err("choose a frame".to_owned());
+        }
+        let name = request
+            .get("preset")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("single");
+        let preset = Preset::parse(name)
+            .ok_or_else(|| format!("preset {name} is not single, stack, columns, hero or grid"))?;
+        let slots: Vec<String> = request
+            .get("slots")
+            .and_then(serde_json::Value::as_array)
+            .map(|slots| {
+                slots
+                    .iter()
+                    .map(|slot| slot.as_str().unwrap_or("").to_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if slots.len() > preset.cells().len() {
+            return Err(format!(
+                "{} is {} slots, not {}",
+                preset.name(),
+                preset.cells().len(),
+                slots.len()
+            ));
+        }
+        let mut jobs = self
+            .jobs
+            .write()
+            .map_err(|_| "jobs unavailable".to_owned())?;
+        let mut next = jobs.clone();
+        for (index, id) in slots.iter().enumerate() {
+            if id.is_empty() {
+                continue;
+            }
+            if slots[..index].contains(id) {
+                return Err(format!("job {id} is in two slots"));
+            }
+            let Some(job) = next.jobs.iter().find(|job| &job.id == id) else {
+                return Err(format!("no job {id}"));
+            };
+            if !job.frames.iter().any(|frame_id| frame_id == &frame) {
+                return Err(format!("job {id} does not target this frame"));
+            }
+            if job.mode != Mode::Show {
+                return Err(format!("job {id} stores pictures; a screen shows them"));
+            }
+        }
+        next.screens.retain(|screen| screen.frame != frame);
+        next.screens.push(Screen {
+            frame: frame.clone(),
+            preset: preset.name().to_owned(),
+            slots,
+        });
+        self.save(&next)?;
+        *jobs = next;
+        Ok(frame)
+    }
+
+    /// Return a frame to the single-panel behaviour.
+    pub fn delete_screen(&self, frame: &str) -> Result<(), String> {
+        let mut jobs = self
+            .jobs
+            .write()
+            .map_err(|_| "jobs unavailable".to_owned())?;
+        let mut next = jobs.clone();
+        let before = next.screens.len();
+        next.screens.retain(|screen| screen.frame != frame);
+        if next.screens.len() == before {
+            return Err(format!("no screen for {frame}"));
+        }
+        self.save(&next)?;
+        *jobs = next;
+        Ok(())
+    }
+
     /// The jobs as the browser sees them: secret parameters become "is set".
     pub fn to_json(&self, plugins: &[plugins::Plugin]) -> serde_json::Value {
         let jobs = self
@@ -678,6 +771,12 @@ impl Scheduler {
                 job: "answer".to_owned(),
             });
         }
+        self.composed(frame_id, fonts)
+    }
+
+    /// The screen itself, ignoring an answer that currently holds the frame.
+    pub fn composed(&self, frame_id: &str, fonts: Option<&Fonts>) -> Option<Render> {
+        let now = now_ms();
         let screen = self.screen(frame_id);
         let preset = screen
             .as_ref()
@@ -729,6 +828,13 @@ impl Scheduler {
                     until_ms,
                 },
             );
+        }
+    }
+
+    /// Drop a held answer, so the frame returns to its own screen.
+    pub fn clear_override(&self, frame_id: &str) {
+        if let Ok(mut overrides) = self.overrides.lock() {
+            overrides.remove(frame_id);
         }
     }
 
@@ -883,6 +989,90 @@ mod tests {
             .err()
             .expect("a bad preset is an error");
         assert!(error.contains("poster"), "{error}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn scheduler_with_jobs(dir_name: &str) -> (Scheduler, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "easellet-screens-{}-{dir_name}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("jobs.toml");
+        std::fs::write(
+            &path,
+            r#"
+[[job]]
+id = "weather"
+plugin = "weather"
+frames = ["f"]
+every_min = 60
+
+[[job]]
+id = "spot"
+plugin = "spot"
+frames = ["f"]
+every_min = 15
+
+[[job]]
+id = "album"
+plugin = "photo-folder"
+frames = ["f"]
+mode = "gallery"
+
+[[job]]
+id = "elsewhere"
+plugin = "news"
+frames = ["other"]
+"#,
+        )
+        .unwrap();
+        (Scheduler::load(&path).unwrap(), dir)
+    }
+
+    #[test]
+    fn a_screen_names_jobs_that_show_on_its_frame() {
+        let (scheduler, dir) = scheduler_with_jobs("names");
+        let save = |value: serde_json::Value| scheduler.save_screen(&value);
+        let screen = |preset: &str, slots: Vec<&str>| serde_json::json!({"frame": "f", "preset": preset, "slots": slots});
+
+        assert_eq!(
+            save(screen("columns", vec!["weather", "spot"])).unwrap(),
+            "f"
+        );
+        assert_eq!(scheduler.screens().len(), 1);
+        assert_eq!(scheduler.screens()[0].preset, "columns");
+        assert_eq!(scheduler.screens()[0].slots, ["weather", "spot"]);
+        // A frame has one screen: saving again replaces it.
+        save(screen("hero", vec!["weather"])).unwrap();
+        assert_eq!(scheduler.screens().len(), 1);
+        assert_eq!(scheduler.screens()[0].preset, "hero");
+        // The screen survives a reload.
+        let reloaded = Scheduler::load(&dir.join("jobs.toml")).unwrap();
+        assert_eq!(reloaded.screens(), scheduler.screens());
+
+        assert!(save(screen("poster", vec![])).is_err(), "unknown preset");
+        assert!(save(screen("grid", vec!["nope"])).is_err(), "unknown job");
+        assert!(
+            save(screen("columns", vec!["weather", "weather"])).is_err(),
+            "one job cannot fill two slots"
+        );
+        assert!(
+            save(screen("columns", vec!["weather", "elsewhere"])).is_err(),
+            "a job must target the screen's frame"
+        );
+        assert!(
+            save(screen("columns", vec!["album"])).is_err(),
+            "a gallery job stores pictures, it does not show them"
+        );
+        assert!(
+            save(screen("columns", vec!["weather", "spot", ""])).is_err(),
+            "columns has two slots"
+        );
+
+        scheduler.delete_screen("f").unwrap();
+        assert!(scheduler.screens().is_empty());
+        assert!(scheduler.delete_screen("f").is_err(), "already gone");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
