@@ -170,6 +170,11 @@ cannot put specks on a card beside it. A tile that is older than twice its job's
 interval marks its header square hollow. The layout is chosen on the frame's card
 in the web UI, not in the manifest.
 
+A screen arranges only the jobs that fill its slots. A job that no slot names is
+not on the screen: its card fills the whole panel as it always did, and it competes
+for that panel by its job's priority. So a card has to read well both as a tile and
+alone.
+
 ## Shipped plugins
 
 | Plugin | Shows | Needs |
