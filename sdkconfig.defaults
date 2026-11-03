@@ -71,3 +71,11 @@ CONFIG_LIBC_NEWLIB_NANO_FORMAT=y
 CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 # ESP_ERR_TO_NAME_LOOKUP stays on: console errors keep their names (8 KB).
+
+# The app description's version, which the portal and `ota` report and which the
+# bootloader's rollback message names. Left alone, IDF asks git once, when
+# CMake configures, and caches the answer: every later build claims the commit
+# that happened to be checked out then. The frame cannot tell a stale claim from
+# a true one, so it says the version of the crate instead.
+CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
+CONFIG_APP_PROJECT_VER="0.1.0"
