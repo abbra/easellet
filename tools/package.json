@@ -1,0 +1,9 @@
+{
+  "name": "easellet-tools",
+  "private": true,
+  "description": "The one Node dependency the checks use: a headless browser driver.",
+  "type": "module",
+  "dependencies": {
+    "puppeteer-core": "25.16.0"
+  }
+}

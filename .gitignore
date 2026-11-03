@@ -21,6 +21,10 @@ opendisplay-proto/target
 __pycache__/
 *.pyc
 
+# The one Node dependency (`tools/package.json`): a browser driver, installed
+# where `node tools/run-portal-harness.mjs` finds it, never committed.
+node_modules/
+
 # Local agent state
 .pi/
 

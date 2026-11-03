@@ -101,6 +101,15 @@ class State:
             self.ground[name] = synthetic(seed, self.total)
         return self.ground[name]
 
+    def exists(self, name: str) -> bool:
+        """Whether the card holds this picture, without grinding its frame.
+
+        `frame()` dithers on first use, which costs about two seconds in Python;
+        asking a delete or a show whether a name is there must not pay that, or
+        ten deletions take twenty seconds and look like a hung page.
+        """
+        return name in self.uploaded or name in self.names or name in self.vendor
+
     def count(self) -> int:
         return len(self.names) + len(self.uploaded) + len(self.vendor)
 
@@ -278,7 +287,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.delete(path)
         if route == "/show":
             path = self.query().get("path", "")
-            if self.state.frame(path) is None:
+            if not self.state.exists(path):
                 return self.body(403, f"ERR {path}: no such picture\n")
             return self.body(200, f"OK show={path} paint=started (about 30 s)\n")
         if route == "/settings":
@@ -301,7 +310,7 @@ class Handler(BaseHTTPRequestHandler):
                 403,
                 f"ERR {path}: only files inside {WRITABLE} can be removed; the rest of the card is the vendor's\n",
             )
-        if self.state.frame(path) is None:
+        if not self.state.exists(path):
             return self.body(403, f"ERR remove {path}: no such file\n")
         self.state.remove(path)
         return self.body(200, f"OK deleted={path} images={self.state.count()}\n")
@@ -324,7 +333,10 @@ def main() -> None:
         daemon_threads = True
 
     server = Server((arguments.host, arguments.port), Handler)
-    print(f"portal mock: http://{arguments.host}:{arguments.port}/ with {arguments.count} pictures")
+    # The bound address, not the requested one: `--port 0` picks a free port, and
+    # tools/run-portal-harness.mjs reads this line to find it.
+    host, port = server.server_address[0], server.server_address[1]
+    print(f"portal mock: http://{host}:{port}/ with {arguments.count} pictures", flush=True)
     server.serve_forever()
 
 
