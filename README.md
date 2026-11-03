@@ -380,7 +380,7 @@ and asks for speech.
 
 Plugins (`bridge/plugins/README.md`) produce cards or pictures. The Plugins tab
 lists each plugin as a closed section and opens one section at a time. This prevents
-the page from showing all fields for ten plugins at once. A selector at the top
+the page from showing all fields for eleven plugins at once. A selector at the top
 jumps to a named plugin. The tab previews a plugin and saves it as a **job**: a plugin, its
 parameters, the frames, an interval and a priority. The bridge keeps jobs in
 `~/.config/easellet-bridge/jobs.toml` (owner-only). Secret parameters are
@@ -426,6 +426,11 @@ The sun plugin shows sunrise, sunset and the length of the day, and the moon pha
 It reads Open-Meteo like the weather plugin, so it needs no key, and it takes the
 place and the day from the question ("sunset in Tampere tomorrow"). In the polar
 night and in the polar day the card says so.
+
+The air plugin shows the European AQI and its band, the PM2.5 and PM10 particles, the
+pollen that is in the air and, from 1, the UV index. It reads Open-Meteo like the
+weather plugin, so it needs no key, and it takes the place from the question («какой
+воздух в Эспоо»).
 
 The agenda plugin reads an iCalendar (`.ics`) calendar: a private address, a
 `file://` address, or a path on the bridge host. By voice, the day comes from the

@@ -151,6 +151,7 @@ Card layouts:
 | --- | --- | --- |
 | `weather` | A forecast for a place. By voice, for the place named («…погоду в Эспоо», "…weather in Espoo"). | Nothing (Open-Meteo). |
 | `sun` | Sunrise, sunset, the length of the day and the moon phase for a place. | Nothing (Open-Meteo). |
+| `air` | Air quality (European AQI), particles and pollen for a place. | Nothing (Open-Meteo). |
 | `agenda` | The next events of an iCalendar calendar. By voice, for the day named («что у меня завтра», "what is on tomorrow"). | A calendar address, a file, or a path. No key. |
 | `news` | Headlines of an RSS/Atom feed. | A feed URL. |
 | `ci` | The latest open PRs of a GitHub repository, each with how many checks failed, ran and passed (Actions and external CI). | A read-only token (see below). |
@@ -177,6 +178,11 @@ own. In the polar night and in the polar day it says so instead of showing an em
 time. It takes the place from the question the way `weather` does («во сколько закат
 в Тампере»), and it takes the day from the question: «завтра» shows tomorrow.
 
+`air` shows the European AQI with its band, the PM2.5 and PM10 particles, the pollen
+types that are above zero, and the UV index from 1. It takes the place from the
+question the way `weather` does («какой воздух в Эспоо»), and it names the place that
+it shows when it speaks.
+
 `ci` counts both kinds of CI reports on a PR's head commit: check runs (GitHub
 Actions and other apps) and commit statuses (external CI). Its token is a GitHub
 **fine-grained personal access token** (Settings → Developer settings → Personal
@@ -191,8 +197,8 @@ carries a yellow line that says so. Without a token, GitHub allows 60 requests a
 hour, which is enough for three PRs per run. `api` points the plugin at GitHub
 Enterprise.
 
-`news`, `ci` and `sun` answer `none` when nothing changed, so an unchanged feed,
-CI board or sunrise never refreshes the panel.
+`news`, `ci`, `sun` and `air` answer `none` when nothing changed, so an unchanged
+feed, CI board or reading never refreshes the panel.
 
 The bridge stores `state` and hands it back as `state` on the next run, per plugin
 and frame. A plugin can therefore remember an ETag or the last thing that it showed
@@ -218,9 +224,9 @@ plugin.items("CI", [("main", "ok"), ("nightly", "fail")], state={"seen": 2})
 
 `hello/` is a complete example in Python. `system/` is one in plain shell.
 
-`bridge/plugins/sdk/easellet_place.py` holds the place lookup that `sun` uses: the
-Open-Meteo geocoder, the coordinates cache, and the words of a spoken question that
-name a place.
+`bridge/plugins/sdk/easellet_place.py` holds the place lookup that `sun` and `air`
+share: the Open-Meteo geocoder, the coordinates cache, and the words of a spoken
+question that name a place.
 
 ## Trying it
 
