@@ -330,10 +330,21 @@ fn run() -> Result<(), String> {
 }
 
 fn serve(bridge: Bridge, context: Arc<ui::Context>, addr: &str) -> Result<(), String> {
+    // The listener is bound here rather than by `Server::http`: with
+    // `--addr 127.0.0.1:0` the kernel picks a free port, and only the listener
+    // knows which one it picked. `tools/bridge-smoke.py` starts the real server
+    // that way, so the line below has to name the port it is really on.
+    let listener =
+        std::net::TcpListener::bind(addr).map_err(|error| format!("listen on {addr}: {error}"))?;
+    let bound = listener
+        .local_addr()
+        .map(|socket| socket.to_string())
+        .unwrap_or_else(|_| addr.to_string());
     let server = Arc::new(
-        tiny_http::Server::http(addr).map_err(|error| format!("listen on {addr}: {error:?}"))?,
+        tiny_http::Server::from_listener(listener, None)
+            .map_err(|error| format!("listen on {addr}: {error:?}"))?,
     );
-    eprintln!("listening on http://{addr}  (/stt /llm /tts /health, web UI at /)");
+    eprintln!("listening on http://{bound}  (/stt /llm /tts /health, web UI at /)");
     // The frame endpoints share one bridge: recognition is CPU-bound and the
     // frame sends one request at a time, so they are served in order. The UI
     // does not take this lock and stays responsive during a Whisper run.
