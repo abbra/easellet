@@ -1,0 +1,31 @@
+name = "sun"
+title = "Солнце"
+description = "Восход, закат, длина дня и фаза Луны от Open-Meteo: без ключа и регистрации."
+i18n = { en = { title = "Sun", description = "Sunrise, sunset, day length and moon phase from Open-Meteo: no key and no signup." } }
+run = "run.py"
+timeout_s = 20
+outputs = ["card", "none"]
+default_every = "6h"
+
+[[param]]
+id = "place"
+type = "location"
+title = "Место"
+required = true
+default = "Хельсинки"
+note = "Название города или «широта,долгота», например 60.17,24.94."
+i18n = { en = { title = "Place", note = "A city name or «latitude,longitude», for example 60.17,24.94." } }
+
+[[param]]
+id = "question"
+type = "text"
+title = "Вопрос"
+hidden = true
+note = "Заполняет ассистент: «во сколько закат в Тампере» показывает Тампере, «…завтра» — завтрашний день."
+i18n = { en = { title = "Question", note = "Filled by the assistant: «when is sunset in Tampere» shows Tampere, «…tomorrow» shows tomorrow." } }
+
+[assistant]
+text_param = "question"
+phrases = ["во сколько восход", "во сколько закат", "когда восход", "когда закат", "сколько световой день", "длина дня", "when is sunrise", "when is sunset", "how long is the day", "day length"]
+intent = "показать солнце"
+description = "Show sunrise, sunset, day length and the moon on the frame."
