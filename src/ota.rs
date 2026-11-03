@@ -37,8 +37,10 @@ const CHUNK: usize = 4 * 1024;
 /// What the portal shows about the firmware that is running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Info {
-    /// The version this crate was built as (`CARGO_PKG_VERSION`).
-    pub version: &'static str,
+    /// The version the running image carries in its application description,
+    /// which is the string a release list names; the crate's own number
+    /// (`CARGO_PKG_VERSION`) only when the image carries no description.
+    pub version: String,
     /// Slot the frame booted from: `ota_0` or `ota_1`.
     pub running: String,
     /// `valid`, `unverified`, `invalid`, `factory` or `unknown`.
@@ -87,7 +89,10 @@ pub fn info() -> Result<Info, String> {
         .get_update_slot()
         .map_err(|error| format!("ERR firmware: {error}"))?;
     Ok(Info {
-        version: env!("CARGO_PKG_VERSION"),
+        version: crate::firmware::running_version(
+            running.firmware.as_ref().map(|info| info.version.as_str()),
+            env!("CARGO_PKG_VERSION"),
+        ),
         running: running.label.to_string(),
         state: state_name(running.state),
         other: update.label.to_string(),
@@ -105,7 +110,7 @@ pub fn info_json() -> Result<String, String> {
     let info = info()?;
     Ok(format!(
         "{{\"version\":\"{}\",\"running\":\"{}\",\"state\":\"{}\",\"other\":\"{}\",\"other_version\":{},\"max_bytes\":{}}}\n",
-        crate::web::json_escape(info.version),
+        crate::web::json_escape(&info.version),
         crate::web::json_escape(&info.running),
         crate::web::json_escape(info.state),
         crate::web::json_escape(&info.other),

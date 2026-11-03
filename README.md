@@ -142,6 +142,11 @@ the frame marks it valid once it reaches its console, and a reset before that pu
 the previous slot back. The bridge cannot tell a rollback from a slow boot, so it
 says what the frame reports and stops there.
 
+`GET /ota` reports the version the running image carries, and a release is named
+by the same string. A dev build therefore answers `0.1.0-dev+g907392f`, not the
+`0.1.0` in `Cargo.toml`. An image flashed before its build wrote a version answers
+with `Cargo.toml`'s number, and the bridge cannot tell that build from a release.
+
 The bridge reads the release list, never writes to the repository. Set
 `firmware_repo` to `owner/name` in **Settings** to turn the feature on, and
 `firmware_channel` to `stable` for tags or `dev` for the build CI makes from every

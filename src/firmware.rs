@@ -2,9 +2,10 @@
 //!
 //! The decisions in here are the ones worth testing on the host, so they live
 //! apart from `ota` (which talks to ESP-IDF): the magic byte that tells a `.bin`
-//! from the HTML page a wrong address returns, and the sentence and HTTP status
-//! each refusal carries. Everything else about an update — the slot, the flash
-//! write, the rollback — needs the real chip.
+//! from the HTML page a wrong address returns, the sentence and HTTP status each
+//! refusal carries, and the version the frame gives for the image it is running.
+//! Everything else about an update — the slot, the flash write, the rollback —
+//! needs the real chip.
 
 use std::fmt;
 
@@ -80,6 +81,24 @@ pub fn looks_like_image(head: &[u8]) -> bool {
     head.first() == Some(&IMAGE_MAGIC)
 }
 
+/// The version a frame reports for the image it is running.
+///
+/// Two numbers exist and only one of them names a release. `Cargo.toml` holds
+/// the crate's number, which every dev build of that release repeats; the
+/// application description holds `CONFIG_APP_PROJECT_VER`, which
+/// `scripts/build-firmware.sh` sets to the version of the build itself
+/// (`0.1.0-dev+g907392f`). `firmware-index.json` names releases by the second,
+/// so a frame answering with the first could never be confirmed to run what a
+/// bridge had just installed. `description` is `None` for an image flashed
+/// before the build wrote its version, and the crate's number is then the only
+/// answer there is.
+pub fn running_version(description: Option<&str>, crate_version: &str) -> String {
+    match description.map(str::trim) {
+        Some(version) if !version.is_empty() => version.to_owned(),
+        _ => crate_version.to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,6 +109,20 @@ mod tests {
         // What a wrong URL or a mistyped file name brings back instead.
         assert!(!looks_like_image(b"<!doctype html><title>404</title>"));
         assert!(!looks_like_image(b""));
+    }
+
+    #[test]
+    fn the_reported_version_is_the_one_a_release_is_named_by() {
+        // A dev build differs from the release it came from only in this
+        // string, so this is what tells a bridge its own install came up.
+        assert_eq!(
+            running_version(Some("0.1.0-dev+g907392f"), "0.1.0"),
+            "0.1.0-dev+g907392f"
+        );
+        // An image flashed before the build wrote its version still answers,
+        // rather than refusing `GET /ota` altogether.
+        assert_eq!(running_version(None, "0.1.0"), "0.1.0");
+        assert_eq!(running_version(Some("  "), "0.1.0"), "0.1.0");
     }
 
     #[test]
