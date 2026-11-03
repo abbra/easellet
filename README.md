@@ -386,19 +386,26 @@ pictures, and examples. A selector at the top jumps to a named plugin. The tab
 previews a plugin and saves it as a **job**: a plugin, its parameters, the frames,
 an interval and a priority. The bridge keeps jobs in
 `~/.config/easellet-bridge/jobs.toml` (owner-only). Secret parameters are write-only
-from the UI. The scheduler runs due jobs every half minute. It keeps the latest
-picture for each frame, pushes the picture to frames that are awake, and
-leaves it for sleeping frames to fetch on their timed wake (`bridge.url` on the
-frame). The bridge never sends a picture again if it is identical to the one that a
-frame already shows. The run log is under the jobs.
+from the UI. The scheduler runs due jobs every half minute and keeps each job's
+latest result.
+
+A frame can show several jobs at once. The **Screen** section of its card chooses
+one of five layouts and the job that fills each slot: one panel, two rows, two
+columns, a main panel with a strip, or four panels. The bridge draws the whole
+panel once, so a change refreshes the panel once and not once per job. A frame
+with no screen keeps the priority rule. The bridge pushes a picture to frames that
+are awake and leaves it for sleeping frames to fetch on their timed wake
+(`bridge.url` on the frame). It never sends a picture again if it is identical to
+the one that a frame already shows. The run log is under the jobs.
 
 ### The assistant's tools
 
 A question that matches a plugin's `[assistant]` phrases («Рамка, покажи погоду»)
 is not sent to the model. The bridge runs that plugin for the frame that asked. The
 frame says «Показываю: …». The plugin's picture replaces what the panel shows after
-the frame finishes speaking. The `/llm` answer carries `X-Panel: keep`, so the frame
-does not paint the transcript over the picture. You can also ask the Assistant tab
+the frame finishes speaking. It stays for ten minutes, and the scheduled screen
+does not replace it in that time. The `/llm` answer carries `X-Panel: keep`, so the
+frame does not paint the transcript over the picture. You can also ask the Assistant tab
 in the web UI by text. The browser plays the answer.
 
 The bridge recognizes commands for the frame itself before it checks plugins and

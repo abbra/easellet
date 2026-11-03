@@ -157,6 +157,19 @@ Card layouts:
   `note`, `accent`. Icons: `clear` `partly` `cloudy` `fog` `drizzle` `rain` `snow`
   `thunder`.
 
+### On a screen
+
+A frame can show several plugins at once. Each plugin then gets a tile: a rectangle
+with a compact header and the card's content at a smaller size. The bridge keeps
+the card and draws the tile, so a plugin does not know whether its card fills a
+panel or a third of one.
+
+A narrow tile cuts a long line with an ellipsis and shows fewer rows, so put the
+important words first. A picture fills its tile and is dithered inside it, so it
+cannot put specks on a card beside it. A tile that is older than twice its job's
+interval marks its header square hollow. The layout is chosen on the frame's card
+in the web UI, not in the manifest.
+
 ## Shipped plugins
 
 | Plugin | Shows | Needs |
