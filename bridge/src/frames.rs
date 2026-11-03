@@ -407,6 +407,14 @@ pub struct PortalAnswer {
     pub body: Vec<u8>,
 }
 
+/// How long a portal request may take. Every portal answer is small except the
+/// firmware upload, which waits for the flash write and a restart; that one asks
+/// for [`PORTAL_TIMEOUT_OTA`] instead.
+pub const PORTAL_TIMEOUT: Duration = Duration::from_secs(40);
+/// The portal allows its socket 180 s to write an image and answer, so the bridge
+/// waits longer than the frame does.
+pub const PORTAL_TIMEOUT_OTA: Duration = Duration::from_secs(240);
+
 /// A request to a frame's portal. POSTs carry the portal's `X-Easellet`
 /// header; `path` is built by the bridge, never taken whole from a request.
 pub fn portal(
@@ -416,10 +424,22 @@ pub fn portal(
     path: &str,
     body: &[u8],
 ) -> Result<PortalAnswer, String> {
+    portal_with(host, password, method, path, body, PORTAL_TIMEOUT)
+}
+
+/// The same, with the caller choosing how long to wait.
+pub fn portal_with(
+    host: &str,
+    password: &str,
+    method: &str,
+    path: &str,
+    body: &[u8],
+    timeout: Duration,
+) -> Result<PortalAnswer, String> {
     let url = format!("http://{}{path}", bracket(host));
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(FRAME_TIMEOUT)
-        .timeout(Duration::from_secs(40))
+        .timeout(timeout)
         .build();
     let mut request = agent.request(method, &url);
     if method == "POST" {

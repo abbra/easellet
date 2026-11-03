@@ -29,6 +29,9 @@ socket2 = "0.5"
 # by default, it carries Cyrillic) and PNG previews of what a panel will show.
 ab_glyph = "0.2"
 png = "0.17"
+# A downloaded image is checked against the hash the index gives before it is
+# written to a frame's flash, so a truncated download cannot brick a slot.
+sha2 = "0.10"
 # Plugins may return a photograph (PNG or JPEG); it is decoded and fitted here.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 

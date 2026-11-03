@@ -250,6 +250,12 @@ pub fn handle(request: Request<'_>, context: &Context) -> Response {
         ("GET", path) if path.starts_with("/api/frames/") && path.ends_with("/ota") => {
             frame_ota(context, path)
         }
+        ("POST", path) if path.starts_with("/api/frames/") && path.ends_with("/firmware") => {
+            frame_firmware_start(context, path, &request.body)
+        }
+        ("GET", path) if path.starts_with("/api/frames/") && path.ends_with("/firmware") => {
+            frame_firmware_state(context, path)
+        }
         (method, path) if path.starts_with("/api/frames/") => frame_action(
             context,
             method,
@@ -1015,34 +1021,156 @@ fn frame_ota(context: &Context, path: &str) -> Response {
         .trim_start_matches("/api/frames/")
         .trim_end_matches("/ota")
         .trim_end_matches('/');
+    match read_ota(context, id) {
+        Ok(value) => Response::json(200, &value),
+        Err(response) => response,
+    }
+}
+
+/// The frame's own `ota` answer, cached for [`crate::firmware::OTA_CACHE`].
+fn read_ota(context: &Context, id: &str) -> Result<serde_json::Value, Response> {
     if let Some(cached) = context.firmware.ota_cached(id) {
-        return Response::json(200, &cached);
+        return Ok(cached);
     }
     let Some((host, _port, password)) = context.frames.target(id) else {
-        return Response::text(404, "ERR no such frame; scan again\n");
+        return Err(Response::text(404, "ERR no such frame; scan again\n"));
     };
     let answer = match frames::portal(&host, &password, "GET", "/ota", &[]) {
         Ok(answer) => answer,
-        Err(error) => return Response::text(502, format!("ERR {error}\n")),
+        Err(error) => return Err(Response::text(502, format!("ERR {error}\n"))),
     };
     if answer.status != 200 {
         let text = String::from_utf8_lossy(&answer.body).trim().to_owned();
-        return Response::text(
+        return Err(Response::text(
             answer.status,
             format!("ERR the frame answered {}: {text}\n", answer.status),
-        );
+        ));
     }
     let value: serde_json::Value = match serde_json::from_slice(&answer.body) {
         Ok(value) => value,
         Err(error) => {
-            return Response::text(
+            return Err(Response::text(
                 502,
                 format!("ERR the frame's ota answer is not JSON: {error}\n"),
-            );
+            ));
         }
     };
     context.firmware.remember_ota(id, value.clone());
-    Response::json(200, &value)
+    Ok(value)
+}
+
+/// A frame as the installer sees it: the portal, with the timeout an upload needs.
+struct PortalFrame {
+    host: String,
+    password: String,
+}
+
+impl crate::firmware::Frame for PortalFrame {
+    fn ota(&self) -> Result<serde_json::Value, String> {
+        let answer = frames::portal(&self.host, &self.password, "GET", "/ota", &[])?;
+        if answer.status != 200 {
+            return Err(format!("the frame answered {}", answer.status));
+        }
+        serde_json::from_slice(&answer.body)
+            .map_err(|error| format!("the frame's ota answer is not JSON: {error}"))
+    }
+
+    fn write(&mut self, image: &[u8]) -> Result<String, String> {
+        let answer = frames::portal_with(
+            &self.host,
+            &self.password,
+            "POST",
+            "/ota",
+            image,
+            frames::PORTAL_TIMEOUT_OTA,
+        );
+        match answer {
+            Ok(answer) if answer.status == 200 => {
+                Ok(String::from_utf8_lossy(&answer.body).trim().to_owned())
+            }
+            // A status other than 200 is the frame refusing the image, and its
+            // sentence says why. A *transport* error after the body was sent is
+            // the normal ending: the frame restarts as soon as it has written
+            // the slot. Nothing is known yet, so the installer asks the frame.
+            Ok(answer) => Err(String::from_utf8_lossy(&answer.body).trim().to_owned()),
+            Err(_) => Ok(String::new()),
+        }
+    }
+}
+
+/// `POST /api/frames/<id>/firmware`: write one release to one frame.
+fn frame_firmware_start(context: &Context, path: &str, body: &[u8]) -> Response {
+    if body.len() > MAX_BODY {
+        return Response::text(413, "ERR request too large\n");
+    }
+    let id = path
+        .trim_start_matches("/api/frames/")
+        .trim_end_matches("/firmware")
+        .trim_end_matches('/');
+    let request: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => return Response::text(400, format!("ERR request JSON: {error}\n")),
+    };
+    let version = request
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    if version.is_empty() {
+        return Response::text(400, "ERR name the version to install\n");
+    }
+    // Writing flash is not something a page may do by accident: the button asks
+    // twice, and the request carries the answer to the second question.
+    if request.get("confirm") != Some(&serde_json::Value::Bool(true)) {
+        return Response::text(400, "ERR installing firmware needs confirm: true\n");
+    }
+    let Some((host, _port, password)) = context.frames.target(id) else {
+        return Response::text(404, "ERR no such frame; scan again\n");
+    };
+    let Some(index) = context.firmware.index() else {
+        return Response::text(409, "ERR no release list yet; refresh it first\n");
+    };
+    let Some(release) = index.release(&version).cloned() else {
+        return Response::text(
+            404,
+            format!("ERR the release list has no {version}; refresh it\n"),
+        );
+    };
+    if context.firmware.installing(id) {
+        return Response::text(
+            409,
+            format!("ERR {version} is already being installed on this frame\n"),
+        );
+    }
+    let ota = match read_ota(context, id) {
+        Ok(ota) => ota,
+        Err(_) => {
+            return Response::text(
+                409,
+                "ERR the frame is asleep or has no portal; it must be awake\n",
+            );
+        }
+    };
+    if let Err(error) = crate::firmware::check(&release, &ota) {
+        return Response::text(409, format!("ERR {error}\n"));
+    }
+    let frame_io = Box::new(PortalFrame { host, password });
+    match context.firmware.start(id, release, frame_io) {
+        Ok(()) => Response::json(202, &serde_json::json!({"started": version})),
+        Err(error) => Response::text(409, format!("ERR {error}\n")),
+    }
+}
+
+/// `GET /api/frames/<id>/firmware`: what the install is doing.
+fn frame_firmware_state(context: &Context, path: &str) -> Response {
+    let id = path
+        .trim_start_matches("/api/frames/")
+        .trim_end_matches("/firmware")
+        .trim_end_matches('/');
+    match context.firmware.install(id) {
+        Some(install) => Response::json(200, &serde_json::to_value(install).unwrap_or_default()),
+        None => Response::json(200, &serde_json::json!({"phase": "idle"})),
+    }
 }
 
 /// `/api/frames/<id>/<action>`: the portal proxy and OpenDisplay delivery.
@@ -1677,9 +1805,75 @@ mod tests {
     }
 
     #[test]
+    fn installing_firmware_asks_twice_and_needs_a_list_and_a_frame() {
+        let (context, _dir) = context(Settings::default());
+        let ask = |body: &'static str| Request {
+            method: "POST",
+            url: "/api/frames/f/firmware",
+            host: Some("192.168.50.93"),
+            authorization: None,
+            marked: true,
+            body: body.as_bytes().to_vec(),
+        };
+        // No `confirm`: the page asks twice, and the second answer is the one
+        // that reaches here.
+        assert_eq!(handle(ask(r#"{"version":"0.2.0"}"#), &context).status, 400);
+
+        let confirmed = ask(r#"{"version":"0.2.0","confirm":true}"#);
+        // The frame is not in the registry, so this is not a frame the bridge
+        // can write to, whatever the release list says.
+        assert_eq!(handle(confirmed, &context).status, 404);
+
+        let idle = handle(get("/api/frames/f/firmware", "192.168.50.93"), &context);
+        assert_eq!(idle.status, 200);
+        let document: serde_json::Value = serde_json::from_slice(&idle.body).unwrap();
+        assert_eq!(document["phase"], "idle");
+    }
+
+    #[test]
     fn the_page_marks_every_post_and_ships_the_converter() {
         assert!(APP.contains(&format!("\"{POST_HEADER}\": \"1\"")));
         assert!(EL6.contains("export function packImage("));
         assert!(PAGE.contains("app.js"));
+    }
+
+    /// Every text the page shows exists in every language.
+    ///
+    /// The dictionaries live in the page itself, and a key added to one language
+    /// and not the other shows up as the key's name in the interface — the sort of
+    /// bug nobody sees when they only read their own language.
+    #[test]
+    fn every_string_is_written_in_both_languages() {
+        fn keys(block: &str) -> std::collections::BTreeSet<String> {
+            let mut found = std::collections::BTreeSet::new();
+            for line in block.lines() {
+                let line = line.trim();
+                let Some(rest) = line.strip_prefix('"') else {
+                    continue;
+                };
+                let Some((key, _)) = rest.split_once("\": ") else {
+                    continue;
+                };
+                found.insert(key.to_owned());
+            }
+            found
+        }
+        fn block(language: &str) -> &'static str {
+            let start = PAGE
+                .find(&format!("  {language}: {{"))
+                .unwrap_or_else(|| panic!("no {language} dictionary"));
+            let rest = &PAGE[start..];
+            let end = rest.find("\n  },").unwrap_or(rest.len());
+            &rest[..end]
+        }
+        let english = keys(block("en"));
+        let russian = keys(block("ru"));
+        assert!(english.len() > 200, "only {} keys", english.len());
+        let missing_in_russian: Vec<&String> = english.difference(&russian).collect();
+        let missing_in_english: Vec<&String> = russian.difference(&english).collect();
+        assert!(
+            missing_in_russian.is_empty() && missing_in_english.is_empty(),
+            "missing in ru: {missing_in_russian:?}; missing in en: {missing_in_english:?}"
+        );
     }
 }

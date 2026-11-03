@@ -119,6 +119,34 @@ The release body is the changelog section, the three checksums and one paragraph
 how to install the image and what a failed update costs. The same text is in two
 places by construction, not by a person copying it.
 
+### Updating a frame
+
+A frame updates itself from a release; nothing is copied over a cable and nothing
+happens on its own. Open the frame's card in the bridge, expand **Firmware**, and
+press **Install** twice. The bridge downloads the image, checks it against the
+hash in `firmware-index.json`, writes it to the slot the frame is not running from,
+and waits for the frame to come back.
+
+| The bridge refuses | Because |
+| --- | --- |
+| the version is already running | nothing to do |
+| the frame is asleep or has no portal | there is nothing to write to |
+| the image is bigger than the frame's slot | it would not boot |
+| the release was built for another partition table | the frame would take the image and then fail |
+| an install on that frame is already running | one writer at a time |
+
+An older version is not refused: that is the recovery path for a bad release.
+
+A failed update costs one reboot. The bootloader starts a new image as unverified,
+the frame marks it valid once it reaches its console, and a reset before that puts
+the previous slot back. The bridge cannot tell a rollback from a slow boot, so it
+says what the frame reports and stops there.
+
+The bridge reads the release list, never writes to the repository. Set
+`firmware_repo` to `owner/name` in **Settings** to turn the feature on, and
+`firmware_channel` to `stable` for tags or `dev` for the build CI makes from every
+green `main`.
+
 ### The `dev` release
 
 A green `main` publishes `firmware-dev` as a pre-release that is replaced, not

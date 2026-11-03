@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,16 @@ pub const SCHEMA: u32 = 1;
 /// Largest index accepted. A few kilobytes is the real size; anything much past
 /// this is not one of ours.
 const MAX_INDEX: usize = 512 * 1024;
+/// Largest image accepted: a 3 MB slot. Anything much past that is not one of
+/// ours, and a wrong `Content-Length` must not turn into an unbounded read.
+pub const MAX_IMAGE: u64 = 8 * 1024 * 1024;
+/// How long an image download may take from a CDN on a home connection.
+const IMAGE_TIMEOUT: Duration = Duration::from_secs(180);
+/// How long the frame is given to come back with the new version before the
+/// bridge says it cannot tell any more.
+pub const COMEBACK: Duration = Duration::from_secs(180);
+/// How often the frame is asked whether it is back.
+const COMEBACK_STEP: Duration = Duration::from_secs(3);
 /// Connect and whole-request timeouts. The index is a few kilobytes from a CDN;
 /// downloading an image is a separate, longer call.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -79,6 +89,15 @@ pub struct Index {
     pub generated: String,
     #[serde(default)]
     pub releases: Vec<Release>,
+}
+
+impl Index {
+    /// The release with this version, if the list has one.
+    pub fn release(&self, version: &str) -> Option<&Release> {
+        self.releases
+            .iter()
+            .find(|release| release.version == version)
+    }
 }
 
 /// Read an index, refusing one this bridge cannot interpret.
@@ -172,6 +191,8 @@ pub struct Store {
     known: Mutex<Known>,
     /// Frame id -> (when read, what the frame said).
     ota: Mutex<BTreeMap<String, (Instant, serde_json::Value)>>,
+    /// Frame id -> the install running, or the last one that ran.
+    installs: Mutex<BTreeMap<String, Install>>,
 }
 
 impl Store {
@@ -189,6 +210,7 @@ impl Store {
             dir,
             known: Mutex::new(known),
             ota: Mutex::new(BTreeMap::new()),
+            installs: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -268,12 +290,289 @@ impl Store {
         }
     }
 
+    /// The cached image of one release, if it is here and still the right size.
+    ///
+    /// The hash is checked when the file is written, and again before it is sent;
+    /// a file whose size changed is deleted rather than used.
+    pub fn cached_image(&self, release: &Release) -> Option<PathBuf> {
+        let path = self.dir.join(format!("{}.bin", release.image.sha256));
+        let size = std::fs::metadata(&path).ok()?.len();
+        if size != release.image.bytes {
+            let _ = std::fs::remove_file(&path);
+            return None;
+        }
+        Some(path)
+    }
+
+    /// The image of a release: from the cache when it is here, else downloaded.
+    pub fn image(&self, release: &Release) -> Result<Vec<u8>, String> {
+        if let Some(path) = self.cached_image(release) {
+            return std::fs::read(&path).map_err(|error| format!("{}: {error}", path.display()));
+        }
+        let path = download(&release.image.url, release, &self.dir)?;
+        std::fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))
+    }
+
+    /// The release list this bridge has, if it has one.
+    pub fn index(&self) -> Option<Index> {
+        self.lock().index.clone()
+    }
+
+    /// The install running on a frame, or the last one that ran.
+    pub fn install(&self, frame: &str) -> Option<Install> {
+        self.installs
+            .lock()
+            .map(|installs| installs.get(frame).cloned())
+            .unwrap_or_default()
+    }
+
+    /// Is an install running on this frame?
+    pub fn installing(&self, frame: &str) -> bool {
+        self.install(frame).is_some_and(|install| {
+            matches!(
+                install.phase,
+                Phase::Downloading | Phase::Writing | Phase::Restarting
+            )
+        })
+    }
+
+    /// Start an install on a frame the guards have already allowed.
+    ///
+    /// The work happens on its own thread: writing flash takes four minutes, and
+    /// the page polls this same server while it runs.
+    pub fn start(
+        self: &Arc<Self>,
+        frame: &str,
+        release: Release,
+        frame_io: Box<dyn Frame + Send>,
+    ) -> Result<(), String> {
+        {
+            let mut installs = self
+                .installs
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(running) = installs.get(frame)
+                && matches!(
+                    running.phase,
+                    Phase::Downloading | Phase::Writing | Phase::Restarting
+                )
+            {
+                return Err(format!(
+                    "{} is already being installed on this frame",
+                    running.version
+                ));
+            }
+            installs.insert(
+                frame.to_owned(),
+                Install {
+                    frame: frame.to_owned(),
+                    version: release.version.clone(),
+                    phase: Phase::Downloading,
+                    message: String::new(),
+                    started_ms: timestamp(),
+                },
+            );
+        }
+        let store = Arc::clone(self);
+        let frame_id = frame.to_owned();
+        std::thread::spawn(move || {
+            let mut frame_io = frame_io;
+            run(
+                &store,
+                &frame_id,
+                &release,
+                &mut *frame_io,
+                COMEBACK,
+                COMEBACK_STEP,
+            );
+        });
+        Ok(())
+    }
+
+    /// Record where an install has got to. An install that was started elsewhere
+    /// (`run` is also called directly by the tests) is created here rather than
+    /// dropped, so a missing entry can never swallow a failure.
+    fn report(&self, frame: &str, version: &str, phase: Phase, message: impl Into<String>) {
+        if let Ok(mut installs) = self.installs.lock() {
+            let install = installs.entry(frame.to_owned()).or_insert_with(|| Install {
+                frame: frame.to_owned(),
+                version: version.to_owned(),
+                phase,
+                message: String::new(),
+                started_ms: timestamp(),
+            });
+            install.phase = phase;
+            install.message = message.into();
+        }
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Known> {
         // A panic elsewhere must not make the release list unreadable.
         self.known
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+}
+
+/// What an install is doing, in the order a person sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Phase {
+    Downloading,
+    Writing,
+    Restarting,
+    Done,
+    Failed,
+}
+
+/// One frame's install, running or finished.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Install {
+    pub frame: String,
+    pub version: String,
+    pub phase: Phase,
+    /// What a person is told, in the frame's own words where there are any.
+    pub message: String,
+    /// Unix milliseconds.
+    pub started_ms: u64,
+}
+
+/// What the installer needs from one frame, so its tests need no frame.
+pub trait Frame {
+    /// The frame's own `ota` answer: the running version and the slot size.
+    fn ota(&self) -> Result<serde_json::Value, String>;
+    /// Write an image and let the frame restart; returns the frame's sentence.
+    fn write(&mut self, image: &[u8]) -> Result<String, String>;
+}
+
+/// The guards. Everything here is a reason not to write flash, and each one says
+/// what a person has to change.
+pub fn check(release: &Release, ota: &serde_json::Value) -> Result<(), String> {
+    let running = ota
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if running == release.version {
+        return Err(format!("{} is already running", release.version));
+    }
+    // The frame reports the size of the slot it actually has; the index says the
+    // slot the image was built for. A frame running another partition table would
+    // take the image and then fail to boot it, which is the one outcome worth
+    // refusing twice.
+    let slot = ota
+        .get("max_bytes")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    if slot > 0 && release.slot_bytes > slot {
+        return Err(format!(
+            "the release was built for a {} byte slot, this frame has {slot}; it runs another partition table",
+            release.slot_bytes
+        ));
+    }
+    if slot > 0 && release.image.bytes > slot {
+        return Err(format!(
+            "{} is {} bytes, the frame's slot is {slot}",
+            release.image.name, release.image.bytes
+        ));
+    }
+    if release.image.bytes > MAX_IMAGE {
+        return Err(format!(
+            "{} is {} bytes; this bridge accepts at most {MAX_IMAGE}",
+            release.image.name, release.image.bytes
+        ));
+    }
+    Ok(())
+}
+
+/// Download, write, wait for the frame to come back.
+fn run(
+    store: &Store,
+    frame: &str,
+    release: &Release,
+    frame_io: &mut dyn Frame,
+    comeback: Duration,
+    step: Duration,
+) {
+    store.report(
+        frame,
+        &release.version,
+        Phase::Downloading,
+        format!("downloading {} bytes", release.image.bytes),
+    );
+    let image = match store.image(release) {
+        Ok(image) => image,
+        Err(error) => {
+            store.report(
+                frame,
+                &release.version,
+                Phase::Failed,
+                format!("download failed: {error}"),
+            );
+            return;
+        }
+    };
+    store.report(frame, &release.version, Phase::Writing, "writing flash");
+    let sentence = match frame_io.write(&image) {
+        Ok(sentence) => sentence,
+        Err(error) => {
+            store.report(
+                frame,
+                &release.version,
+                Phase::Failed,
+                format!("the frame refused it: {error}"),
+            );
+            return;
+        }
+    };
+    // A reset in the middle of the answer is the normal ending: the frame restarts
+    // as soon as it has written the slot, so the sentence may be all there is.
+    let _ = sentence;
+
+    store.report(
+        frame,
+        &release.version,
+        Phase::Restarting,
+        "the frame is restarting",
+    );
+    let deadline = Instant::now() + comeback;
+    let mut seen = String::new();
+    while Instant::now() < deadline {
+        std::thread::sleep(step);
+        let Ok(ota) = frame_io.ota() else {
+            continue;
+        };
+        let running = ota
+            .get("version")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        if running == release.version {
+            store.report(
+                frame,
+                &release.version,
+                Phase::Done,
+                format!("{} is running", release.version),
+            );
+            return;
+        }
+        seen = running;
+    }
+    // Honest about what the bridge cannot see: the frame may have rolled back, or
+    // it may still be booting. Only the console can tell which.
+    let why = if seen.is_empty() {
+        format!("no answer after {} s", comeback.as_secs())
+    } else {
+        format!("it reports {seen}, so it rolled back")
+    };
+    store.report(
+        frame,
+        &release.version,
+        Phase::Failed,
+        format!(
+            "not back after {} s ({why}); check `ota` on the console",
+            comeback.as_secs()
+        ),
+    );
 }
 
 /// Where the default cache lives: `$XDG_CACHE_HOME/easellet-bridge/firmware`.
@@ -343,6 +642,69 @@ pub fn http_fetch(url: &str, token: &str) -> Result<Vec<u8>, String> {
         ));
     }
     Ok(body)
+}
+
+/// Download one image into the cache, checking size and hash before it is kept.
+pub fn download(url: &str, release: &Release, dir: &Path) -> Result<PathBuf, String> {
+    if release.image.bytes > MAX_IMAGE {
+        return Err(format!(
+            "{} is {} bytes; this bridge accepts at most {MAX_IMAGE}",
+            release.image.name, release.image.bytes
+        ));
+    }
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(CONNECT_TIMEOUT)
+        .timeout(IMAGE_TIMEOUT)
+        .build();
+    let response = match agent.request("GET", url).call() {
+        Ok(response) | Err(ureq::Error::Status(_, response)) => response,
+        Err(error) => return Err(format!("{url}: {error}")),
+    };
+    let status = response.status();
+    if status != 200 {
+        return Err(format!("{url}: HTTP {status}"));
+    }
+    let mut body = Vec::new();
+    response
+        .into_reader()
+        .take(release.image.bytes + 1)
+        .read_to_end(&mut body)
+        .map_err(|error| format!("{url}: {error}"))?;
+    if body.len() as u64 != release.image.bytes {
+        return Err(format!(
+            "{} is {} bytes, the index says {}",
+            release.image.name,
+            body.len(),
+            release.image.bytes
+        ));
+    }
+    let digest = sha256_hex(&body);
+    if digest != release.image.sha256 {
+        // Deleted, not written: a file that fails its hash is not a file this
+        // bridge ever wants to find in its cache again.
+        return Err(format!(
+            "{} hashes to {digest}, the index says {}",
+            release.image.name, release.image.sha256
+        ));
+    }
+    std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    let path = dir.join(format!("{}.bin", release.image.sha256));
+    let temporary = dir.join(format!("{}.bin.tmp", release.image.sha256));
+    std::fs::write(&temporary, &body)
+        .map_err(|error| format!("{}: {error}", temporary.display()))?;
+    std::fs::rename(&temporary, &path).map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(path)
+}
+
+/// SHA-256 of some bytes, lowercase hex.
+///
+/// One hash of one file is the only cryptography this crate needs; the frame
+/// verifies the image itself, so an attacker on the LAN is a different question
+/// from a corrupted download.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]
@@ -469,6 +831,237 @@ mod tests {
         assert_eq!(json["index"]["releases"][0]["version"], "0.1.0");
         assert!(json["fetched_ms"].as_u64().unwrap() > 0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_hash_is_lowercase_hex_of_the_whole_file() {
+        // The empty string's SHA-256 is worth pinning: a hash that silently
+        // hashed nothing would still look like 64 hex digits.
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    /// A release whose image is already in the cache, so no test needs a network.
+    fn cached_release(dir: &Path, version: &str, bytes: &[u8]) -> Release {
+        let mut release = parse(GOOD).unwrap().releases.remove(0);
+        release.version = version.to_owned();
+        release.image.bytes = bytes.len() as u64;
+        release.image.sha256 = sha256_hex(bytes);
+        std::fs::write(dir.join(format!("{}.bin", release.image.sha256)), bytes).unwrap();
+        release
+    }
+
+    fn ota(version: &str) -> serde_json::Value {
+        serde_json::json!({
+            "version": version, "running": "ota_0", "state": "valid",
+            "other": "ota_1", "other_version": version, "max_bytes": 3145728,
+        })
+    }
+
+    struct Fake {
+        /// What `ota` answers, in order; the last one repeats.
+        answers: Vec<serde_json::Value>,
+        /// What `write` answers.
+        write: Result<String, String>,
+        written: usize,
+    }
+
+    impl Fake {
+        fn new(answers: Vec<serde_json::Value>) -> Self {
+            Self {
+                answers,
+                write: Ok("OK firmware 4 bytes written to ota_1; rebooting".to_owned()),
+                written: 0,
+            }
+        }
+    }
+
+    impl Frame for Fake {
+        fn ota(&self) -> Result<serde_json::Value, String> {
+            let index = self.written.min(self.answers.len().saturating_sub(1));
+            Ok(self.answers[index].clone())
+        }
+
+        fn write(&mut self, image: &[u8]) -> Result<String, String> {
+            self.written += 1;
+            assert_eq!(image, b"image");
+            self.write.clone()
+        }
+    }
+
+    #[test]
+    fn the_guards_refuse_a_frame_that_cannot_take_this_release() {
+        let dir = scratch("guards");
+        let release = cached_release(&dir, "0.2.0", b"image");
+        assert!(check(&release, &ota("0.1.0")).is_ok());
+        assert!(
+            check(&release, &ota("0.2.0"))
+                .unwrap_err()
+                .contains("already running")
+        );
+        // A frame whose slot is smaller than the release was built for runs
+        // another partition table, and would take the image then fail to boot it.
+        let mut small = ota("0.1.0");
+        small["max_bytes"] = serde_json::json!(2097152);
+        assert!(
+            check(&release, &small)
+                .unwrap_err()
+                .contains("partition table")
+        );
+        // An image larger than the slot it is going into: the release was built
+        // for this frame's slot, and the image is still bigger than it.
+        let mut tiny = ota("0.1.0");
+        tiny["max_bytes"] = serde_json::json!(3);
+        let mut small_slot = release.clone();
+        small_slot.slot_bytes = 3;
+        assert!(
+            check(&small_slot, &tiny)
+                .unwrap_err()
+                .contains("the frame's slot is 3")
+        );
+        // A frame that does not say how large its slot is gets no size check.
+        let mut quiet = ota("0.1.0");
+        quiet["max_bytes"] = serde_json::json!(0);
+        assert!(check(&release, &quiet).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_install_climbs_through_its_phases_to_done() {
+        let dir = scratch("install");
+        let store = Store::new(dir.clone());
+        let release = cached_release(&dir, "0.2.0", b"image");
+        let mut frame = Fake::new(vec![ota("0.1.0"), ota("0.2.0")]);
+        run(
+            &store,
+            "f",
+            &release,
+            &mut frame,
+            Duration::from_secs(2),
+            Duration::from_millis(5),
+        );
+        let install = store.install("f").unwrap();
+        assert_eq!(install.phase, Phase::Done, "{}", install.message);
+        assert_eq!(install.message, "0.2.0 is running");
+        assert_eq!(frame.written, 1);
+        assert!(!store.installing("f"), "a finished install is not running");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_rollback_is_reported_with_the_version_the_frame_says() {
+        let dir = scratch("rollback");
+        let store = Store::new(dir.clone());
+        let release = cached_release(&dir, "0.2.0", b"image");
+        // It answers "0.1.0" throughout: the bootloader put the old slot back.
+        let mut frame = Fake::new(vec![ota("0.1.0")]);
+        run(
+            &store,
+            "f",
+            &release,
+            &mut frame,
+            Duration::from_millis(60),
+            Duration::from_millis(10),
+        );
+        let install = store.install("f").unwrap();
+        assert_eq!(install.phase, Phase::Failed);
+        assert!(
+            install.message.contains("it reports 0.1.0"),
+            "{}",
+            install.message
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_frame_that_refuses_the_image_says_why() {
+        let dir = scratch("refused");
+        let store = Store::new(dir.clone());
+        let release = cached_release(&dir, "0.2.0", b"image");
+        let mut frame = Fake::new(vec![ota("0.1.0")]);
+        frame.write = Err("HTTP 413 firmware too large".to_owned());
+        run(
+            &store,
+            "f",
+            &release,
+            &mut frame,
+            Duration::from_millis(50),
+            Duration::from_millis(5),
+        );
+        let install = store.install("f").unwrap();
+        assert_eq!(install.phase, Phase::Failed);
+        assert!(install.message.contains("413 firmware too large"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_image_that_is_not_cached_and_cannot_be_reached_fails_before_the_flash() {
+        let dir = scratch("download");
+        let store = Store::new(dir.clone());
+        let mut release = parse(GOOD).unwrap().releases.remove(0);
+        release.image.url = "http://127.0.0.1:1/easellet.bin".to_owned();
+        release.image.bytes = 5;
+        let mut frame = Fake::new(vec![ota("0.1.0")]);
+        run(
+            &store,
+            "f",
+            &release,
+            &mut frame,
+            Duration::from_millis(50),
+            Duration::from_millis(5),
+        );
+        let install = store.install("f").unwrap();
+        assert_eq!(install.phase, Phase::Failed);
+        assert!(install.message.starts_with("download failed:"));
+        assert_eq!(
+            frame.written, 0,
+            "nothing is written when nothing was downloaded"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_second_install_on_the_same_frame_is_refused_while_the_first_runs() {
+        let dir = scratch("twice");
+        let store = Arc::new(Store::new(dir.clone()));
+        let release = cached_release(&dir, "0.2.0", b"image");
+        // The frame never comes back, so the first install is still running.
+        let frame = Box::new(SlowFrame::default());
+        store.start("f", release.clone(), frame).unwrap();
+        let error = store
+            .start("f", release, Box::new(SlowFrame::default()))
+            .unwrap_err();
+        assert!(error.contains("already being installed"), "{error}");
+        // Another frame is a different install and is allowed.
+        assert!(
+            store
+                .start(
+                    "g",
+                    cached_release(&dir, "0.3.0", b"image"),
+                    Box::new(SlowFrame::default())
+                )
+                .is_ok()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A frame that writes the image and is never heard from again.
+    #[derive(Default)]
+    struct SlowFrame;
+
+    impl Frame for SlowFrame {
+        fn ota(&self) -> Result<serde_json::Value, String> {
+            Err("connection refused".to_owned())
+        }
+        fn write(&mut self, _image: &[u8]) -> Result<String, String> {
+            Ok(String::new())
+        }
     }
 
     #[test]

@@ -615,9 +615,169 @@ function buildCard(initial) {
     if (screenBox.open) loadScreen();
   });
 
+  // The firmware: what the frame runs, what the release list offers, and the one
+  // button in this page that writes flash. It asks twice, in place, like the
+  // other destructive actions do.
+  const firmwareBox = document.createElement("details");
+  firmwareBox.className = "note-card firmware-card";
+  const firmwareSummary = text("summary", t("firmware.summary"));
+  const firmwareBody = document.createElement("div");
+  firmwareBody.className = "screen-body";
+  const firmwareLine = text("p", "", "note");
+  const firmwareNotes = text("button", t("firmware.notes"));
+  const firmwareInstall = text("button", t("firmware.install", { version: "…" }), "primary");
+  const firmwareButtons = document.createElement("div");
+  firmwareButtons.className = "row";
+  firmwareButtons.append(firmwareNotes, firmwareInstall);
+  const firmwareMessage = text("p", "", "message");
+  firmwareBody.append(firmwareLine, firmwareButtons, firmwareMessage);
+  firmwareBox.append(firmwareSummary, firmwareBody);
+
+  let offered = null;
+  let armed = null;
+  let poll = null;
+
+  function phaseText(state) {
+    const label = t(`firmware.phase.${state.phase}`);
+    const text = label === `firmware.phase.${state.phase}` ? "" : label;
+    return [text, state.message].filter(Boolean).join(" · ");
+  }
+
+  function drawFirmware(ota, list, state) {
+    const running = ota?.version ?? null;
+    const release = list?.store?.index?.releases?.[0] ?? null;
+    offered = release && release.version !== running ? release : null;
+    const enabled = list?.enabled === true;
+
+    if (!enabled) {
+      firmwareLine.textContent = t("firmware.off");
+    } else {
+      const parts = [];
+      parts.push(
+        running
+          ? t("firmware.running", { version: running, slot: ota.running ?? "" })
+          : t("firmware.noFrame"),
+      );
+      if (!release) parts.push(t("firmware.noList"));
+      else if (!offered) parts.push(t("firmware.uptodate"));
+      else parts.push(t("firmware.available", { version: release.version }));
+      firmwareLine.textContent = parts.join(" · ");
+    }
+    firmwareNotes.hidden = !(offered?.notes || release?.notes);
+    firmwareInstall.hidden = !offered;
+    if (offered) firmwareInstall.textContent = t("firmware.install", { version: offered.version });
+    firmwareInstall.disabled = Boolean(state && state.phase !== "idle" && state.phase !== "done" && state.phase !== "failed");
+
+    const busy = state && ["downloading", "writing", "restarting"].includes(state.phase);
+    if (busy) {
+      firmwareMessage.textContent = phaseText(state);
+      firmwareMessage.className = "message";
+    } else if (state?.phase === "done") {
+      firmwareMessage.textContent = phaseText(state);
+      firmwareMessage.className = "message ok";
+    } else if (state?.phase === "failed") {
+      firmwareMessage.textContent = phaseText(state);
+      firmwareMessage.className = "message bad";
+    } else {
+      firmwareMessage.textContent = "";
+      firmwareMessage.className = "message";
+    }
+    return busy;
+  }
+
+  async function readFirmware() {
+    const [otaAnswer, listAnswer, stateAnswer] = await Promise.all([
+      fetch(`/api/frames/${frame.id}/ota`),
+      fetch("/api/firmware"),
+      fetch(`/api/frames/${frame.id}/firmware`),
+    ]);
+    const ota = otaAnswer.ok ? await otaAnswer.json() : null;
+    const list = listAnswer.ok ? await listAnswer.json() : null;
+    const state = stateAnswer.ok ? await stateAnswer.json() : null;
+    return { ota, list, state };
+  }
+
+  async function loadFirmware() {
+    firmwareMessage.textContent = "";
+    firmwareMessage.className = "message";
+    try {
+      const { ota, list, state } = await readFirmware();
+      if (drawFirmware(ota, list, state)) pollState();
+    } catch (error) {
+      firmwareLine.textContent = t("firmware.noFrame");
+      firmwareMessage.textContent = error.message;
+      firmwareMessage.className = "message bad";
+    }
+  }
+
+  // Writing flash and restarting take minutes; the page asks the bridge, not the
+  // frame, and stops as soon as the answer is final.
+  function pollState() {
+    if (poll) clearInterval(poll);
+    poll = setInterval(async () => {
+      if (!firmwareBox.isConnected) {
+        clearInterval(poll);
+        poll = null;
+        return;
+      }
+      try {
+        const { ota, list, state } = await readFirmware();
+        if (!drawFirmware(ota, list, state)) {
+          clearInterval(poll);
+          poll = null;
+          loadFrames();
+          loadFirmware();
+        }
+      } catch {
+        /* the bridge is busy or restarting; ask again next tick */
+      }
+    }, 1500);
+  }
+
+  firmwareInstall.addEventListener("click", async () => {
+    if (!offered) return;
+    if (armed !== offered.version) {
+      // First press: ask again, in place, for five seconds.
+      armed = offered.version;
+      firmwareInstall.textContent = t("firmware.pressAgain");
+      setTimeout(() => {
+        if (armed === offered?.version && offered) {
+          armed = null;
+          firmwareInstall.textContent = t("firmware.install", { version: offered.version });
+        }
+      }, 5000);
+      return;
+    }
+    armed = null;
+    firmwareInstall.disabled = true;
+    firmwareMessage.textContent = t("firmware.starting");
+    firmwareMessage.className = "message";
+    const answer = await post(`/api/frames/${frame.id}/firmware`, {
+      version: offered.version,
+      confirm: true,
+    });
+    if (!answer.ok) {
+      firmwareMessage.textContent = (await answer.text()).trim();
+      firmwareMessage.className = "message bad";
+      firmwareInstall.disabled = false;
+      firmwareInstall.textContent = t("firmware.install", { version: offered.version });
+      return;
+    }
+    pollState();
+  });
+
+  firmwareNotes.addEventListener("click", () => {
+    const url = offered?.notes || "";
+    if (url) window.open(url, "_blank", "noopener");
+  });
+
+  firmwareBox.addEventListener("toggle", () => {
+    if (firmwareBox.open) loadFirmware();
+  });
+
   const actions = document.createElement("div");
   actions.className = "row";
-  element.append(header, chips, actions, send, note, screenBox, gallery);
+  element.append(header, chips, actions, send, note, screenBox, firmwareBox, gallery);
 
   function update(next) {
     frame = next;
@@ -1187,6 +1347,11 @@ const FIELDS = [
   { key: "token", kind: "secret" },
   { key: "ui_password", kind: "secret" },
   { key: "ui_hosts", kind: "list" },
+  { key: "firmware_repo", kind: "text" },
+  { key: "firmware_channel", kind: "text" },
+  { key: "firmware_token", kind: "secret" },
+  { key: "firmware_check_h", kind: "number" },
+  { key: "firmware_index_url", kind: "text" },
   { key: "addr", kind: "text" },
   { key: "stt", kind: "text" },
   { key: "llm", kind: "text" },
@@ -1224,7 +1389,8 @@ function renderSettings({ values, pinned, restart }) {
         input.value = values[field.key] ?? "";
       } else {
         input = document.createElement("input");
-        input.type = field.kind === "secret" ? "password" : "text";
+        input.type =
+          field.kind === "secret" ? "password" : field.kind === "number" ? "number" : "text";
         if (field.kind === "secret") {
           // The value never comes back from the bridge: empty keeps it, "-" clears.
           input.placeholder = values[field.key] ? t("settings.secretSet") : t("settings.secretUnset");
@@ -1255,6 +1421,9 @@ function changes() {
       if (input.value) change[field.key] = input.value;
     } else if (field.kind === "list") {
       if (input.value !== (before ?? []).join(", ")) change[field.key] = input.value;
+    } else if (field.kind === "number") {
+      // The settings file holds a number: the API refuses text for this key.
+      if (input.value !== String(before ?? "")) change[field.key] = Number(input.value);
     } else if (input.value !== (before ?? "")) {
       change[field.key] = input.value;
     }

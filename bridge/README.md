@@ -177,6 +177,20 @@ had and how old it is.
 | `GET /api/firmware` | The settings, the cached list, when it was fetched, and the last error. Refreshes in the background when the list is due. |
 | `POST /api/firmware/refresh` | Fetch now. `200` with the list, `502` with the reason. |
 | `GET /api/frames/<id>/ota` | The frame's own `GET /ota`, proxied and cached for 30 s: the running version, the other slot and the slot size. |
+| `POST /api/frames/<id>/firmware` | `{"version": "...", "confirm": true}`. Answers `202` and writes on its own thread. |
+| `GET /api/frames/<id>/firmware` | `{"version", "phase", "message", "started_ms"}`: `downloading`, `writing`, `restarting`, `done`, `failed`, or `idle`. |
+
+An install is four steps: download to the cache and check the hash, `POST /ota` to
+the frame with a 240 s timeout (the frame allows its own socket 180 s), wait for
+the frame to come back with the new version, and say what happened. A reset in the
+middle of the POST is the normal ending, not a failure: the frame restarts as soon
+as it has written the slot, so the bridge asks it rather than guessing.
+
+The bridge refuses an install when the version is already running, when an install
+on that frame is already in flight, when the frame is asleep, when the image is
+larger than the frame's slot, and when the release was built for a different
+partition table. It does not refuse an older version: installing one is the
+recovery path for a bad release, and the bootloader's rollback covers the other.
 
 ## Backends
 
