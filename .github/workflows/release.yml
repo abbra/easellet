@@ -10,6 +10,12 @@
 # the store never shows a release that is missing its image. Every release keeps
 # its assets: an older image is the recovery path for a bad one, and 1.2 MB
 # apiece costs nothing.
+#
+# Publishing a draft creates its tag, and a tag push starts this workflow, so a
+# published release always reports its own tag and asks for a second build. That
+# run is made to do nothing: a tag push whose release is already published has
+# nothing left to build. A release that has to be rebuilt is dispatched, which is
+# the only path that may replace a published one.
 name: release
 
 on:
@@ -48,6 +54,7 @@ jobs:
     outputs:
       version: ${{ steps.tag.outputs.version }}
       tag: ${{ steps.tag.outputs.tag }}
+      done: ${{ steps.published.outputs.done }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,9 +90,30 @@ jobs:
             echo "ERR $GITHUB_SHA is not on main" >&2
             exit 1
           }
+      # The tag of a published release reaches here once, when the release is
+      # published, and that release is the one this run would build.
+      - id: published
+        name: The tag already has a published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "done=false" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            exit 0
+          fi
+          # Missing is the normal case; a draft is not published yet.
+          draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
+          if [ "$draft" = "false" ]; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+            echo "$TAG is published already: nothing to build"
+          fi
 
   firmware:
     needs: verify
+    if: needs.verify.outputs.done != 'true'
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository }}/ci:07fa785ca23c
@@ -143,6 +171,7 @@ jobs:
 
   release:
     needs: [verify, firmware]
+    if: needs.verify.outputs.done != 'true' && needs.firmware.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
