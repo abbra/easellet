@@ -1408,6 +1408,11 @@ mod tests {
             if dither { "True" } else { "False" }
         );
         let mut child = Command::new("python3")
+            // Several tests run at once, and they all import the same module from
+            // the same checkout: without this they also all write the same
+            // `__pycache__`, and a half-written file makes one child exit before
+            // it reads its input.
+            .env("PYTHONDONTWRITEBYTECODE", "1")
             .args(["-I", "-c", &script])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
