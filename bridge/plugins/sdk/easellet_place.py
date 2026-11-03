@@ -123,7 +123,12 @@ def place_from_question(question, state):
 
 
 def locate(place, state):
-    """Coordinates and a display name, from 'lat,lon' or by name (cached in state)."""
+    """Coordinates and a display name, from 'lat,lon' or by name (cached in state).
+
+    The geocoder answers in the script of the name that it is given: a Latin name
+    comes back in English, a Cyrillic one in Russian, so «Helsinki» stays Latin in
+    an English interface and «Хельсинки» stays Cyrillic in a Russian one.
+    """
     try:
         latitude, longitude = (float(part) for part in place.split(","))
         return latitude, longitude, place
@@ -132,7 +137,8 @@ def locate(place, state):
     cached = state.get("place")
     if cached and cached.get("query") == place:
         return cached["latitude"], cached["longitude"], cached["name"]
-    query = urllib.parse.urlencode({"name": place, "count": 1, "language": "ru", "format": "json"})
+    language = "en" if any("a" <= letter <= "z" for letter in fold(place)) else "ru"
+    query = urllib.parse.urlencode({"name": place, "count": 1, "language": language, "format": "json"})
     found = fetch(f"https://geocoding-api.open-meteo.com/v1/search?{query}").get("results")
     if not found:
         raise LookupError(f"место «{place}» не найдено")
