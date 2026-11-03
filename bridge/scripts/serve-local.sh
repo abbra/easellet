@@ -50,7 +50,9 @@ mkdir -p "$HOME/tmp/frame/logs"
 # operator's back. Ask for it only while diagnosing a microphone:
 #   EASEL_BRIDGE_DUMP=$HOME/tmp/frame/stt-dumps ./bridge/scripts/serve-local.sh
 
-old=$(ss -lptnH "sport = :$port" | grep -o 'pid=[0-9]*' | cut -d= -f2 | head -1)
+# Nothing listening is a start, not a failure: with `pipefail` an empty grep
+# would end the script here and the bridge would never come up.
+old=$(ss -lptnH "sport = :$port" | grep -o 'pid=[0-9]*' | cut -d= -f2 | head -1 || true)
 if [ -n "$old" ]; then
     echo "stopping pid $old"
     kill "$old"
