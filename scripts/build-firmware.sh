@@ -63,6 +63,13 @@ if [[ "$headroom" -lt 0 ]]; then
     exit 1
 fi
 
+# The two numbers the release index puts next to a hash, so a published image
+# says which toolchain built it. ESP-IDF is installed into a directory named
+# after its version; Xtensa Rust prints its version as a trailing parenthesis.
+idf_dir="$(ls -d .embuild/espressif/esp-idf/*/ 2>/dev/null | head -1)"
+rust_version="$(rustc --version | sed -n 's/.*(\([0-9][0-9.]*\))$/\1/p')"
+echo "idf $(basename "${idf_dir:-unknown}")"
+echo "rust ${rust_version:-unknown}"
 echo "version $version"
 echo "sdkconfig $sdkconfig"
 echo "bytes $bytes"

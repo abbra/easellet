@@ -226,6 +226,17 @@ jobs:
         run: |
           source scripts/env.sh
           bash scripts/check.sh
+      # A dev build has to say which build it is, or "what is on the frame"
+      # stops being answerable once the dev release has moved on. The version
+      # goes into a generated sdkconfig, never into a checked-in file, which is
+      # what `scripts/build-firmware.sh` exists for.
+      - name: The image a dev release installs
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          source scripts/env.sh
+          version="$(python3 tools/check-version.py --print)"
+          bash scripts/build-firmware.sh "$version-dev+g${GITHUB_SHA:0:7}" | tee target/dev-image.txt
       - name: The image fits the slot the frame is flashed with
         run: |
           set -euo pipefail
@@ -235,12 +246,88 @@ jobs:
           echo "image $bytes bytes in a $slot-byte slot ($slots slots)"
           test "$slots" -ge 2
           test "$bytes" -le "$slot"
+      - name: Collect what a release carries
+        run: |
+          set -euo pipefail
+          image=target/xtensa-esp32s3-espidf/release/easellet.bin
+          # A dev build prints the version it was asked to build; anything else
+          # carries the version `Cargo.toml` names.
+          facts=target/dev-image.txt
+          [ -f "$facts" ] || printf 'version %s\n' "$(python3 tools/check-version.py --print)" > "$facts"
+          version="$(sed -n 's/^version //p' "$facts")"
+          mkdir -p dist
+          cp "$facts" dist/build.txt
+          cp "$image" "dist/easellet-$version.bin"
+          cp target/xtensa-esp32s3-espidf/release/bootloader.bin dist/
+          cp target/partition-table.bin dist/
+          (cd dist && sha256sum "easellet-$version.bin" > "easellet-$version.bin.sha256")
+          cat dist/easellet-*.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: easellet-dev
-          path: |
-            target/xtensa-esp32s3-espidf/release/easellet.bin
-            target/partition-table.bin
+          name: firmware
+          path: dist
+
+  # The dev release is a moving target: one build, replaced on every green
+  # `main`, so a person testing today's work asks for it once instead of
+  # downloading a file. It is never a release: no tag anybody can point at.
+  dev:
+    needs: [image, changes, firmware]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.firmware == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    # Two main pushes in a row must not replace the release at the same time:
+    # one job deleting assets while the other uploads them leaves a release
+    # that is missing its image for a minute.
+    concurrency:
+      group: dev-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: dist
+      - name: Replace the dev release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version //p' dist/build.txt)"
+          idf="$(sed -n 's/^idf //p' dist/build.txt)"
+          rust="$(sed -n 's/^rust //p' dist/build.txt)"
+          image="easellet-$version.bin"
+          read -r slot_bytes slots <<< "$(python3 tools/partitions.py)"
+          python3 tools/firmware-index.py --channel dev \
+            --version "$version" --tag firmware-dev \
+            --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --image "$image" \
+            --bytes "$(stat -c %s "dist/$image")" \
+            --sha256 "$(cut -d' ' -f1 "dist/$image.sha256")" \
+            --url "https://github.com/$GH_REPO/releases/download/firmware-dev/$image" \
+            --slot-bytes "$slot_bytes" --idf "$idf" --rust "$rust" \
+            --commit "$(git rev-parse --short=7 HEAD)" \
+            --notes "https://github.com/$GH_REPO/releases/tag/firmware-dev" \
+            --out dist/firmware-index.json
+          cat > dist/notes.md <<NOTES
+          Dev build of Easellet $version.
+
+          Built by CI from $(git rev-parse HEAD) on $(date -u +%Y-%m-%d).
+          This release is replaced on every green \`main\`; it is not a version
+          anybody should depend on. Install it through the bridge's frame card
+          or the frame's own portal, or build the same image from that commit.
+          NOTES
+          if gh release view firmware-dev >/dev/null 2>&1; then
+            gh release view firmware-dev --json assets --jq '.assets[].name' \
+              | while read -r name; do gh release delete-asset firmware-dev "$name" -y; done
+            gh release edit firmware-dev --prerelease --notes-file dist/notes.md
+          else
+            gh release create firmware-dev --prerelease --target main \
+              --title 'Easellet dev build' --notes-file dist/notes.md
+          fi
+          gh release upload firmware-dev dist/easellet-*.bin* dist/firmware-index.json --clobber
 
   smoke:
     needs: [image, changes]
