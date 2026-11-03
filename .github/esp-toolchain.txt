@@ -1,0 +1,8 @@
+# The Xtensa toolchain this project builds with, as README.md records it.
+#
+# The firmware job caches `.tools/` (1.6 GB of toolchain) under a hash of this
+# file, and fails when the toolchain it installed reports anything else; a
+# cache keyed only by "latest" is how a build starts depending on the day.
+xtensa-rust 1.97.0.0
+espup 0.19.0
+ldproxy 0.3.4
