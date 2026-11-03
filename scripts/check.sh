@@ -2,6 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/env.sh
+# The version in Cargo.toml is the only one a person edits; the others are
+# written by scripts/release.sh. Drift between them makes one slot of the frame
+# lie about itself, so it is checked before anything is built.
+python3 tools/check-version.py
 cargo fmt --check
 # Console parser is pure std; test natively without trying to run Xtensa binaries.
 for module in clock config diag image pcm bridge vad gallery web buttons power actions firmware; do
@@ -73,21 +77,8 @@ echo "== opendisplay-proto (host) =="
 # at 0x8000 by esptool, so a build that fits sdkconfig's single-app layout can
 # still be too large for a real slot. Two equal app slots are also what OTA
 # needs, so a table that lost one fails here instead of at the first upload.
-read -r SLOT_BYTES SLOTS <<< "$(python3 - <<'PY'
-import re
-
-slots = []
-for line in open("partitions.csv", encoding="utf-8"):
-    fields = [field.strip() for field in line.split(",")]
-    if line.lstrip().startswith("#") or len(fields) < 5 or fields[1] != "app":
-        continue
-    match = re.fullmatch(r"(0x[0-9a-fA-F]+|[0-9]+)([KkMm]?)", fields[4])
-    size = int(match.group(1), 0)
-    slots.append(size * {"": 1, "k": 1024, "m": 1024 * 1024}[match.group(2).lower()])
-
-print(max(slots) if slots else 0, len(slots))
-PY
-)"
+# `scripts/build-firmware.sh` reads the same numbers from the same place.
+read -r SLOT_BYTES SLOTS <<< "$(python3 tools/partitions.py)"
 if [ "$SLOTS" -lt 2 ]; then
     echo "partitions.csv: $SLOTS app slot(s); OTA needs two (see README)" >&2
     exit 1
