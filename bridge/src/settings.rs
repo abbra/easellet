@@ -59,6 +59,17 @@ pub struct Settings {
     pub opendisplay_name: String,
     /// Address of the bridge's OpenDisplay listener.
     pub opendisplay_addr: String,
+    /// `owner/name` of the repository whose releases carry the images; empty
+    /// turns firmware updates off.
+    pub firmware_repo: String,
+    /// `stable` or `dev`: which releases the UI offers.
+    pub firmware_channel: String,
+    /// Token for a private repository. Secret: the UI says whether it is set.
+    pub firmware_token: String,
+    /// Hours between automatic index refreshes; 0 = only when a person asks.
+    pub firmware_check_h: u64,
+    /// Index URL of a mirror; empty means GitHub.
+    pub firmware_index_url: String,
 }
 
 /// One `[[frame]]` table.
@@ -92,6 +103,11 @@ impl Default for Settings {
             opendisplay_frame: String::new(),
             opendisplay_name: "Easellet".to_owned(),
             opendisplay_addr: "0.0.0.0:2446".to_owned(),
+            firmware_repo: String::new(),
+            firmware_channel: "stable".to_owned(),
+            firmware_token: String::new(),
+            firmware_check_h: 6,
+            firmware_index_url: String::new(),
         }
     }
 }
@@ -99,7 +115,7 @@ impl Default for Settings {
 /// Keys that only take effect at start.
 pub const RESTART_KEYS: &[&str] = &["addr", "stt", "llm", "tts"];
 /// Keys whose value is never sent to the browser, only whether it is set.
-pub const SECRET_KEYS: &[&str] = &["token", "ui_password"];
+pub const SECRET_KEYS: &[&str] = &["token", "ui_password", "firmware_token"];
 
 /// Longest text value accepted from the UI; the system prompt is the long one.
 const MAX_VALUE: usize = 4_096;
@@ -138,7 +154,8 @@ impl Settings {
         let text = format!(
             "# easellet-bridge settings; edited by the web UI as well.\n\
              # Keys: addr, token, stt, llm, tts, wake, llm_system, stt_prompt, llm_url,\n\
-             # ui_password, ui_hosts, opendisplay_*. Flags and EASEL_* variables override this file.\n\n{text}"
+             # ui_password, ui_hosts, opendisplay_*, firmware_*. Flags and EASEL_* variables\n\
+             # override this file.\n\n{text}"
         );
         if let Some(directory) = path.parent() {
             std::fs::create_dir_all(directory)
@@ -251,12 +268,12 @@ impl Settings {
                 Ok(items)
             };
             match key.as_str() {
-                "token" | "ui_password" => {
+                "token" | "ui_password" | "firmware_token" => {
                     let secret = text(value)?;
-                    let field = if key == "token" {
-                        &mut next.token
-                    } else {
-                        &mut next.ui_password
+                    let field = match key.as_str() {
+                        "token" => &mut next.token,
+                        "ui_password" => &mut next.ui_password,
+                        _ => &mut next.firmware_token,
                     };
                     match secret.as_str() {
                         "" => continue,
@@ -309,6 +326,39 @@ impl Settings {
                     next.opendisplay_name = name;
                 }
                 "opendisplay_addr" => next.opendisplay_addr = valid_addr(&text(value)?)?,
+                "firmware_repo" => {
+                    let repo = text(value)?;
+                    if !repo.is_empty() && !crate::firmware::valid_repo(&repo) {
+                        return Err("firmware_repo must be owner/name".to_owned());
+                    }
+                    next.firmware_repo = repo;
+                }
+                "firmware_channel" => {
+                    let channel = text(value)?;
+                    if !matches!(channel.as_str(), "stable" | "dev") {
+                        return Err("firmware_channel must be stable or dev".to_owned());
+                    }
+                    next.firmware_channel = channel;
+                }
+                "firmware_check_h" => {
+                    let hours = value
+                        .as_u64()
+                        .ok_or_else(|| "firmware_check_h must be a number".to_owned())?;
+                    if hours > 168 {
+                        return Err("firmware_check_h is at most 168 hours".to_owned());
+                    }
+                    next.firmware_check_h = hours;
+                }
+                "firmware_index_url" => {
+                    let url = text(value)?;
+                    if !(url.is_empty()
+                        || url.starts_with("http://")
+                        || url.starts_with("https://"))
+                    {
+                        return Err("firmware_index_url must be an http(s) URL".to_owned());
+                    }
+                    next.firmware_index_url = url;
+                }
                 // Frames are added and removed through their own requests.
                 other => return Err(format!("unknown setting {other}")),
             }

@@ -9,6 +9,7 @@ mod arithmetic;
 mod backends;
 mod commands;
 mod compose;
+mod firmware;
 mod frames;
 mod history;
 mod intents;
@@ -302,6 +303,9 @@ fn run() -> Result<(), String> {
                 None
             }
         },
+        // The release list survives a restart in the cache, so a bridge that
+        // cannot reach GitHub still says what it knew and how old that is.
+        firmware: Arc::new(firmware::Store::new(firmware::default_dir())),
         plugin_dirs: dirs,
         plugin_state: Mutex::new(std::collections::BTreeMap::new()),
         scheduler,

@@ -76,6 +76,8 @@ pub struct Context {
     /// What each plugin returned as `state`, by plugin and frame.
     pub plugin_state: Mutex<std::collections::BTreeMap<(String, String), serde_json::Value>>,
     pub scheduler: Arc<Scheduler>,
+    /// The release list the frame card offers, and the images it caches.
+    pub firmware: Arc<crate::firmware::Store>,
     /// The frames' assistant, for questions typed into the UI; set once the
     /// bridge exists (it holds a tool that holds this context).
     pub bridge: std::sync::OnceLock<Arc<Mutex<crate::server::Bridge>>>,
@@ -231,6 +233,8 @@ pub fn handle(request: Request<'_>, context: &Context) -> Response {
         ("POST", path) if path.starts_with("/api/plugins/") => {
             plugin_action(context, &path["/api/plugins/".len()..], &request.body)
         }
+        ("GET", "/api/firmware") => firmware_status(context),
+        ("POST", "/api/firmware/refresh") => firmware_refresh(context),
         ("GET", "/api/opendisplay") => opendisplay_status(context),
         ("POST", "/api/opendisplay") => save_opendisplay(context, &request.body),
         ("GET", "/api/frames") => frame_list(context),
@@ -242,6 +246,9 @@ pub fn handle(request: Request<'_>, context: &Context) -> Response {
         ("POST", "/api/frames/remove") => remove_frame(context, &request.body),
         ("GET", path) if path.starts_with("/api/frames/") && path.ends_with("/screen.png") => {
             screen_png(context, path)
+        }
+        ("GET", path) if path.starts_with("/api/frames/") && path.ends_with("/ota") => {
+            frame_ota(context, path)
         }
         (method, path) if path.starts_with("/api/frames/") => frame_action(
             context,
@@ -926,6 +933,118 @@ fn screen_png(context: &Context, path: &str) -> Response {
     }
 }
 
+/// The firmware settings, as the browser sees them, plus the release list.
+fn firmware_settings(settings: &Settings) -> serde_json::Value {
+    serde_json::json!({
+        "repo": settings.firmware_repo,
+        "channel": settings.firmware_channel,
+        "check_h": settings.firmware_check_h,
+        "index_url": settings.firmware_index_url,
+        "token_set": !settings.firmware_token.is_empty(),
+        "enabled": !settings.firmware_repo.is_empty() || !settings.firmware_index_url.is_empty(),
+    })
+}
+
+fn firmware_status(context: &Context) -> Response {
+    let Ok(state) = context.settings.read() else {
+        return Response::text(500, "ERR settings unavailable\n");
+    };
+    let settings = state.settings.clone();
+    drop(state);
+    let mut document = firmware_settings(&settings);
+    let store = context.firmware.to_json();
+    document["store"] = store;
+    // The list refreshes itself while somebody is looking at it, which is when a
+    // stale list is worth fixing; nothing in the bridge starts a fetch at 3 a.m.
+    if document["enabled"] == serde_json::Value::Bool(true)
+        && context.firmware.due(settings.firmware_check_h)
+    {
+        let store = Arc::clone(&context.firmware);
+        std::thread::spawn(move || {
+            if let Ok(url) = crate::firmware::index_url(
+                &settings.firmware_repo,
+                &settings.firmware_channel,
+                &settings.firmware_index_url,
+            ) {
+                let token = settings.firmware_token.clone();
+                let result =
+                    store.refresh(&url, &|url: &str| crate::firmware::http_fetch(url, &token));
+                if let Err(error) = result {
+                    eprintln!("ERR firmware index: {error}");
+                }
+            }
+        });
+    }
+    Response::json(200, &document)
+}
+
+fn firmware_refresh(context: &Context) -> Response {
+    let Ok(state) = context.settings.read() else {
+        return Response::text(500, "ERR settings unavailable\n");
+    };
+    let settings = state.settings.clone();
+    drop(state);
+    let url = match crate::firmware::index_url(
+        &settings.firmware_repo,
+        &settings.firmware_channel,
+        &settings.firmware_index_url,
+    ) {
+        Ok(url) => url,
+        Err(error) => return Response::text(409, format!("ERR {error}\n")),
+    };
+    let token = settings.firmware_token.clone();
+    match context
+        .firmware
+        .refresh(&url, &|url: &str| crate::firmware::http_fetch(url, &token))
+    {
+        Ok(index) => Response::json(
+            200,
+            &serde_json::json!({"fetched": index.releases.len(), "index": index}),
+        ),
+        Err(error) => Response::text(502, format!("ERR {error}\n")),
+    }
+}
+
+/// `/api/frames/<id>/ota`: what the frame says about its two slots.
+///
+/// Proxied rather than read from the browser: the frame has no CORS and may have
+/// a password. The answer is cached for [`crate::firmware::OTA_CACHE`], because a
+/// page that polls the install state would otherwise ask the frame twice a second.
+fn frame_ota(context: &Context, path: &str) -> Response {
+    let id = path
+        .trim_start_matches("/api/frames/")
+        .trim_end_matches("/ota")
+        .trim_end_matches('/');
+    if let Some(cached) = context.firmware.ota_cached(id) {
+        return Response::json(200, &cached);
+    }
+    let Some((host, _port, password)) = context.frames.target(id) else {
+        return Response::text(404, "ERR no such frame; scan again\n");
+    };
+    let answer = match frames::portal(&host, &password, "GET", "/ota", &[]) {
+        Ok(answer) => answer,
+        Err(error) => return Response::text(502, format!("ERR {error}\n")),
+    };
+    if answer.status != 200 {
+        let text = String::from_utf8_lossy(&answer.body).trim().to_owned();
+        return Response::text(
+            answer.status,
+            format!("ERR the frame answered {}: {text}\n", answer.status),
+        );
+    }
+    let value: serde_json::Value = match serde_json::from_slice(&answer.body) {
+        Ok(value) => value,
+        Err(error) => {
+            return Response::text(
+                502,
+                format!("ERR the frame's ota answer is not JSON: {error}\n"),
+            );
+        }
+    };
+    context.firmware.remember_ota(id, value.clone());
+    Response::json(200, &value)
+}
+
 /// `/api/frames/<id>/<action>`: the portal proxy and OpenDisplay delivery.
 fn frame_action(
     context: &Context,
@@ -1192,6 +1311,7 @@ mod tests {
                 plugin_dirs: Vec::new(),
                 plugin_state: Mutex::new(std::collections::BTreeMap::new()),
                 scheduler: Arc::new(Scheduler::load(&dir.path.join("jobs.toml")).unwrap()),
+                firmware: Arc::new(crate::firmware::Store::new(dir.path.join("firmware"))),
                 bridge: std::sync::OnceLock::new(),
                 started: Instant::now(),
                 hostnames: vec!["honka.vda.li".to_owned()],
@@ -1234,6 +1354,35 @@ mod tests {
             marked: false,
             body: Vec::new(),
         }
+    }
+
+    #[test]
+    fn the_firmware_route_says_what_it_knows_and_what_it_cannot() {
+        let (context, _dir) = context(Settings::default());
+        let answer = handle(get("/api/firmware", "192.168.50.93"), &context);
+        assert_eq!(answer.status, 200);
+        let document: serde_json::Value = serde_json::from_slice(&answer.body).unwrap();
+        assert_eq!(document["enabled"], false);
+        assert_eq!(document["channel"], "stable");
+        assert_eq!(document["check_h"], 6);
+        assert!(document["store"]["index"].is_null());
+        assert_eq!(document["token_set"], false);
+
+        // With no repository there is nothing to fetch, and the answer says so
+        // instead of failing somewhere deeper.
+        let mut request = get("/api/firmware/refresh", "192.168.50.93");
+        request.method = "POST";
+        request.marked = true;
+        let answer = handle(request, &context);
+        assert_eq!(answer.status, 409);
+        assert!(String::from_utf8_lossy(&answer.body).contains("firmware_repo"));
+
+        // A frame the registry does not know has no ota to proxy.
+        let answer = handle(
+            get("/api/frames/94a990caed46/ota", "192.168.50.93"),
+            &context,
+        );
+        assert_eq!(answer.status, 404);
     }
 
     #[test]

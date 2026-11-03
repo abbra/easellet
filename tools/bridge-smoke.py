@@ -102,7 +102,8 @@ def checks(base: str) -> list[str]:
 
     for path, key in (("/api/status", None), ("/api/frames", "frames"),
                       ("/api/screens", "screens"), ("/api/jobs", "jobs"),
-                      ("/api/settings", None), ("/api/opendisplay", None)):
+                      ("/api/settings", None), ("/api/opendisplay", None),
+                      ("/api/firmware", "store")):
         status, text, _ = get(base, path)
         parsed = None
         try:
@@ -125,6 +126,10 @@ def checks(base: str) -> list[str]:
     check(post(base, "/api/jobs/save", b"not json") == 400, "POST /api/jobs/save rejects junk")
     check(post(base, "/api/frames/remove", b"{}") == 400, "POST /api/frames/remove needs a frame")
     check(post(base, "/api/screens/delete", b"{}") == 400, "POST /api/screens/delete needs a frame")
+    # A bridge with no `firmware_repo` has nothing to fetch, and says so rather
+    # than reaching for GitHub.
+    check(post(base, "/api/firmware/refresh", b"{}") == 409,
+          "POST /api/firmware/refresh without a repo is 409")
     return failures
 
 

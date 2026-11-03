@@ -149,6 +149,35 @@ Both endpoints advertise by default. To make the bridge the only endpoint, set
 `opendisplay.mdns=0` on the frame and reboot it. The frame then keeps its TCP
 listener but stops its mDNS advertisement.
 
+## Firmware releases
+
+The bridge can read the repository's releases, so the frame card knows which
+versions exist and what each image hashes to. It never writes to the repository.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `firmware_repo` | empty | `owner/name`. Empty turns the feature off. |
+| `firmware_channel` | `stable` | `stable` or `dev`. The dev channel is the moving pre-release built from `main`. |
+| `firmware_token` | empty | For a private repository. The API says whether it is set, never its value. |
+| `firmware_check_h` | `6` | Hours between automatic refreshes. `0` means only when a person asks. |
+| `firmware_index_url` | empty | Any URL serving the same `firmware-index.json`, for a home without GitHub. |
+
+The list is one asset, `firmware-index.json`, attached to every release
+(`tools/firmware-index.py` writes it in CI). So the bridge reads
+`releases/latest/download/firmware-index.json`, or
+`releases/download/firmware-dev/firmware-index.json` for the dev channel, and not
+the GitHub API: no rate limit, no token, one request.
+
+The index is cached in `$XDG_CACHE_HOME/easellet-bridge/firmware/index.json` with
+the time it was fetched. A bridge that cannot reach GitHub still shows the list it
+had and how old it is.
+
+| Route | Meaning |
+|---|---|
+| `GET /api/firmware` | The settings, the cached list, when it was fetched, and the last error. Refreshes in the background when the list is due. |
+| `POST /api/firmware/refresh` | Fetch now. `200` with the list, `502` with the reason. |
+| `GET /api/frames/<id>/ota` | The frame's own `GET /ota`, proxied and cached for 30 s: the running version, the other slot and the slot size. |
+
 ## Backends
 
 `--stt`, `--llm` and `--tts` each accept `stub` (the default) or

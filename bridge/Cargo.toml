@@ -19,7 +19,10 @@ toml = "0.8"
 # (no TLS: frames have none).
 opendisplay-proto = { path = "../opendisplay-proto" }
 miniz_oxide = { version = "0.8", features = ["with-alloc"] }
-ureq = { version = "2.12", default-features = false }
+# The release index is fetched over HTTPS from GitHub, and the frames' portals are
+# the only plain-HTTP servers this crate talks to; `tls` is what makes the first
+# possible without a separate download tool.
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
 # mDNS needs SO_REUSEADDR/SO_REUSEPORT to share port 5353 with avahi-daemon.
 socket2 = "0.5"
 # Rendering cards for the panels: glyph outlines from a TrueType font (DejaVu Sans
