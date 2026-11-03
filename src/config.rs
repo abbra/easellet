@@ -11,12 +11,15 @@
 //! writes the file.
 //!
 //! The file lives at [`FILE`] with an 8.3 name because FATFS runs with
-//! `CONFIG_FATFS_LFN_NONE`, so long names do not exist on this volume.
+//! `CONFIG_FATFS_LFN_NONE`, so long names do not exist on this volume. The
+//! directory is the product name and is exactly eight characters for that
+//! reason: a ninth one is not a compile error but makes every write fail with
+//! `EINVAL` on a real card, so `the_card_paths_are_short_names` holds the line.
 
 /// Directory the firmware is allowed to write; shared with the audio test files.
-pub const DIR: &str = "EASELTEST";
+pub const DIR: &str = "EASELLET";
 /// Path below `/sdcard`. 8.3 uppercase: long filenames are compiled out of FATFS.
-pub const FILE: &str = "EASELTEST/CONFIG.TXT";
+pub const FILE: &str = "EASELLET/CONFIG.TXT";
 /// Refuse anything larger: a settings file should never need to be big, and a
 /// bounded read keeps a corrupt card from exhausting the heap. 4 KB leaves room
 /// for the rendered header plus every key at its longest; 1 KB stopped fitting
@@ -1413,5 +1416,35 @@ mod tests {
         settings.set_ai_key("easellet-lan-2026").unwrap();
         assert!(settings.set_ai_key("-").is_ok());
         assert_eq!(settings.ai_key, None);
+    }
+
+    /// The card has no long names (`CONFIG_FATFS_LFN_NONE`), so each component
+    /// of a card path must fit 8.3. Nothing enforced that when the directory was
+    /// renamed: the nine-letter name compiled, booted, and failed every write
+    /// with `EINVAL` — `config save`, uploads, recordings — which only a real
+    /// card and a real close of the console port could show.
+    #[test]
+    fn the_card_paths_are_short_names() {
+        for path in [DIR, FILE] {
+            for component in path.split('/') {
+                let (stem, extension) = component.split_once('.').unwrap_or((component, ""));
+                assert!(
+                    stem.len() <= 8,
+                    "{component}: more than 8 characters before the dot"
+                );
+                assert!(
+                    extension.len() <= 3,
+                    "{component}: more than 3 after the dot"
+                );
+                assert!(!stem.is_empty(), "{component}: empty name");
+                assert!(
+                    component.chars().all(|c| c.is_ascii_uppercase()
+                        || c.is_ascii_digit()
+                        || c == '.'
+                        || c == '_'),
+                    "{component}: not an 8.3 name"
+                );
+            }
+        }
     }
 }

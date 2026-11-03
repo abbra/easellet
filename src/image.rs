@@ -27,7 +27,7 @@ const BMP_ROW_BYTES: usize = panel::WIDTH * 3;
 /// The one place on the card the firmware writes to, and therefore the only
 /// place a host may ask it to delete from. Everything else is the vendor's own
 /// data and is read-only from the portal.
-pub const WRITABLE_DIR: &str = "EASELTEST";
+pub const WRITABLE_DIR: &str = "EASELLET";
 
 /// The file a delete request names, if the request may act on it.
 ///
@@ -213,13 +213,13 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn only_easeltest_and_below_is_writable() {
-        assert!(is_writable_dir("EASELTEST"));
-        assert!(is_writable_dir("easeltest/UPLOADS"));
-        assert!(!is_writable_dir("EASELTESTX"));
+    fn only_easellet_and_below_is_writable() {
+        assert!(is_writable_dir("EASELLET"));
+        assert!(is_writable_dir("easellet/UPLOADS"));
+        assert!(!is_writable_dir("EASELLETX"));
         assert!(!is_writable_dir("PICTURES"));
-        assert!(!is_writable_dir("EASELTEST/../PICTURES"));
-        assert!(!is_writable_dir("/EASELTEST"));
+        assert!(!is_writable_dir("EASELLET/../PICTURES"));
+        assert!(!is_writable_dir("/EASELLET"));
         assert!(!is_writable_dir(""));
     }
 
@@ -302,11 +302,11 @@ mod tests {
 
     #[test]
     fn removal_stays_inside_the_writable_directory() {
-        assert!(removable("EASELTEST/UPLOADS/UP0001.EL6").is_ok());
-        assert!(removable("EASELTEST/A.BMP").is_ok());
+        assert!(removable("EASELLET/UPLOADS/UP0001.EL6").is_ok());
+        assert!(removable("EASELLET/A.BMP").is_ok());
         assert_eq!(
-            removable("EASELTEST/UPLOADS/UP0001.EL6").unwrap(),
-            Path::new("/sdcard/EASELTEST/UPLOADS/UP0001.EL6")
+            removable("EASELLET/UPLOADS/UP0001.EL6").unwrap(),
+            Path::new("/sdcard/EASELLET/UPLOADS/UP0001.EL6")
         );
     }
 
@@ -320,16 +320,16 @@ mod tests {
     #[test]
     fn removal_refuses_what_is_not_a_picture() {
         // `config save` writes this file; a delete request must not reach it.
-        assert!(removable("EASELTEST/CONFIG.TXT").is_err());
-        assert!(removable("EASELTEST/REC.WAV").is_err());
-        assert!(removable("EASELTEST/UPLOADS/UP0001.EL6/../CONFIG.TXT").is_err());
+        assert!(removable("EASELLET/CONFIG.TXT").is_err());
+        assert!(removable("EASELLET/REC.WAV").is_err());
+        assert!(removable("EASELLET/UPLOADS/UP0001.EL6/../CONFIG.TXT").is_err());
     }
 
     #[test]
     fn removal_refuses_to_climb_out() {
-        assert!(removable("../EASELTEST/UP0001.EL6").is_err());
-        assert!(removable("/EASELTEST/UP0001.EL6").is_err());
-        assert!(removable("EASELTEST\\..\\UP0001.EL6").is_err());
-        assert!(removable("EASELTESTFUPLOADS/UP0001.EL6").is_err());
+        assert!(removable("../EASELLET/UP0001.EL6").is_err());
+        assert!(removable("/EASELLET/UP0001.EL6").is_err());
+        assert!(removable("EASELLET\\..\\UP0001.EL6").is_err());
+        assert!(removable("EASELLETFUPLOADS/UP0001.EL6").is_err());
     }
 }

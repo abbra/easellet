@@ -302,7 +302,7 @@
 
       <fieldset>
         <legend data-i18n="settings.slideshow">Slideshow</legend>
-        <div class="field"><label for="gallery-dir" data-i18n="settings.dir">Folder on the card</label><input id="gallery-dir" name="gallery.dir" type="text" placeholder="EASELTEST/UPLOADS"></div>
+        <div class="field"><label for="gallery-dir" data-i18n="settings.dir">Folder on the card</label><input id="gallery-dir" name="gallery.dir" type="text" placeholder="EASELLET/UPLOADS"></div>
         <div class="field"><label for="gallery-secs" data-i18n="settings.interval">Interval, s</label><input id="gallery-secs" name="gallery.secs" type="number" step="30" min="120" max="3600" placeholder="300"></div>
         <label class="option"><input type="checkbox" name="gallery.auto" id="gallery-auto"> <span data-i18n="settings.autoShow">show at power-on</span></label>
       </fieldset>
@@ -351,7 +351,7 @@
 
   <footer data-i18n-html="footer.note">
     The gallery shows what is drawn on the screen; only what lies in
-    <code>EASELTEST</code> can be deleted — the rest of the card belongs to the
+    <code>EASELLET</code> can be deleted — the rest of the card belongs to the
     firmware.
   </footer>
 </main>
@@ -492,7 +492,7 @@ const STRINGS = {
     "firmware.noReturn": "The frame has not come back yet; reload this page once it has.",
     "firmware.readError": "Could not read the firmware state: {error}",
     "firmware.where": "The image is <code>target/xtensa-esp32s3-espidf/release/easellet.bin</code> from a release build. The first OTA needs a serial flash of the bootloader, the partition table and the app: see “Flashing” in <code>README.md</code>.",
-    "footer.note": "The gallery shows what is drawn on the screen; only what lies in <code>EASELTEST</code> can be deleted — the rest of the card belongs to the firmware.",
+    "footer.note": "The gallery shows what is drawn on the screen; only what lies in <code>EASELLET</code> can be deleted — the rest of the card belongs to the firmware.",
     "sensors.battery": "battery {percent}% ({volts} V)",
     "sensors.charging": " · charging",
     "sensors.usb": " · USB",
@@ -623,7 +623,7 @@ const STRINGS = {
     "firmware.noReturn": "Рамка пока не вернулась; обновите страницу, когда появится.",
     "firmware.readError": "Не смог прочитать состояние прошивки: {error}",
     "firmware.where": "Образ — это <code>target/xtensa-esp32s3-espidf/release/easellet.bin</code> из сборки release. Для первого OTA нужна последовательная прошивка загрузчика, таблицы разделов и приложения: см. «Flashing» в <code>README.md</code>.",
-    "footer.note": "Галерея показывает то же, что нарисовано на экране; удалять можно только то, что лежит в <code>EASELTEST</code> — остальное на карте принадлежит прошивке.",
+    "footer.note": "Галерея показывает то же, что нарисовано на экране; удалять можно только то, что лежит в <code>EASELLET</code> — остальное на карте принадлежит прошивке.",
     "sensors.battery": "батарея {percent}% ({volts} В)",
     "sensors.charging": " · заряжается",
     "sensors.usb": " · от USB",
@@ -966,9 +966,9 @@ const PAGE = 12;
 const CACHE_LIMIT = 48;
 const cache = new Map();
 
-// The firmware deletes only inside EASELTEST, so the page does not offer a button
+// The firmware deletes only inside EASELLET, so the page does not offer a button
 // that is bound to fail: the vendor's own pictures are shown and left alone.
-const WRITABLE = "easeltest/";
+const WRITABLE = "easellet/";
 const removable = (name) => name.toLowerCase().startsWith(WRITABLE);
 
 const gallery = {
@@ -1147,7 +1147,7 @@ function renderGallery() {
 
   if (gallery.images.length === 0) {
     empty.hidden = false;
-    empty.textContent = t("gallery.empty", { dir: gallery.dir || "EASELTEST/UPLOADS" });
+    empty.textContent = t("gallery.empty", { dir: gallery.dir || "EASELLET/UPLOADS" });
   } else if (images.length === 0) {
     empty.hidden = false;
     empty.textContent = t("gallery.noMatch", { search: gallery.search });

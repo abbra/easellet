@@ -71,7 +71,7 @@ async function main() {
   );
 
   // --- the list arrives -------------------------------------------------
-  const chip = await until(() => $("gallery-chip").textContent.includes("EASELTEST"));
+  const chip = await until(() => $("gallery-chip").textContent.includes("EASELLET"));
   log(Boolean(chip), `список: ${$("gallery-chip").textContent}`);
 
   const total = Number($("tab-count").textContent);
@@ -152,7 +152,7 @@ async function main() {
     headers: { "X-Easellet": "1" },
   });
   const refusedText = (await refused.text()).trim();
-  log(refused.status === 403, `удаление вне EASELTEST: ${refused.status} ${refusedText.slice(0, 40)}`);
+  log(refused.status === 403, `удаление вне EASELLET: ${refused.status} ${refusedText.slice(0, 40)}`);
 
   // --- tabs -------------------------------------------------------------
   const settingsLink = $("tab-link-settings");

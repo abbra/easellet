@@ -1213,8 +1213,8 @@ mod tests {
     #[test]
     fn a_query_parameter_is_percent_decoded() {
         assert_eq!(
-            query_value("path=EASELTEST%2FUP0001.EL6", "path").unwrap(),
-            "EASELTEST/UP0001.EL6"
+            query_value("path=EASELLET%2FUP0001.EL6", "path").unwrap(),
+            "EASELLET/UP0001.EL6"
         );
         assert_eq!(
             query_value("x=1&path=my%20photo.el6", "path").unwrap(),
@@ -1229,12 +1229,12 @@ mod tests {
     #[test]
     fn the_listing_is_valid_json() {
         let entries = [Entry {
-            name: "EASELTEST/UP0001.EL6".to_owned(),
+            name: "EASELLET/UP0001.EL6".to_owned(),
             bytes: 192_000,
         }];
         assert_eq!(
-            list_json("EASELTEST", &entries),
-            "{\"dir\":\"EASELTEST\",\"frame_bytes\":192000,\"images\":[{\"name\":\"EASELTEST/UP0001.EL6\",\"bytes\":192000}]}"
+            list_json("EASELLET", &entries),
+            "{\"dir\":\"EASELLET\",\"frame_bytes\":192000,\"images\":[{\"name\":\"EASELLET/UP0001.EL6\",\"bytes\":192000}]}"
         );
         // A quote or a backslash in a name must not break the document.
         assert_eq!(json_escape("a\"b\\c"), "a\\\"b\\\\c");
@@ -1298,14 +1298,13 @@ mod tests {
 
     #[test]
     fn a_delete_request_names_one_picture() {
-        let head =
-            parse_head("POST /delete?path=EASELTEST%2FUPLOADS%2FUP0001.EL6 HTTP/1.1\r\n\r\n")
-                .unwrap();
+        let head = parse_head("POST /delete?path=EASELLET%2FUPLOADS%2FUP0001.EL6 HTTP/1.1\r\n\r\n")
+            .unwrap();
         assert_eq!(head.method, Method::Post);
         assert_eq!(head.path, "/delete");
         assert_eq!(
             query_value(&head.query, "path").unwrap(),
-            "EASELTEST/UPLOADS/UP0001.EL6"
+            "EASELLET/UPLOADS/UP0001.EL6"
         );
     }
 
@@ -1313,7 +1312,7 @@ mod tests {
     fn the_page_offers_deletion_only_where_the_frame_allows_it() {
         // The write policy is the firmware's (`image::removable`), but the page
         // must not draw a button bound to fail: it filters by the same prefix.
-        assert!(PAGE.contains("\"EASELTEST/\"") || PAGE.contains("\"easeltest/\""));
+        assert!(PAGE.contains("\"EASELLET/\"") || PAGE.contains("\"easellet/\""));
         assert!(PAGE.contains("/delete?path="));
     }
 

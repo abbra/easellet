@@ -3,7 +3,7 @@
 
 The password is read with getpass (no echo) and never printed. It travels over
 the USB serial link, and - only if you say yes - is written to
-/sdcard/EASELTEST/CONFIG.TXT so a reboot can re-join without retyping it.
+/sdcard/EASELLET/CONFIG.TXT so a reboot can re-join without retyping it.
 
 The port is opened once and held, and that is not a detail: the USB-Serial/JTAG
 interface resets the chip when the host opens or closes the port, and the driver
@@ -94,14 +94,14 @@ def main() -> int:
             do_save = True
         else:
             do_save = ask_yes(
-                "Write these credentials and wifi.auto=1 to EASELTEST/CONFIG.TXT? "
+                "Write these credentials and wifi.auto=1 to EASELLET/CONFIG.TXT? "
                 "(passphrase stored in the clear on the SD card)"
             )
         if do_save:
             replies.append(("wifi auto on", command(port, "wifi auto on", timeout=30.0)))
             replies.append(("config save", command(port, "config save", timeout=60.0)))
             replies.append(("config", command(port, "config")))
-            replies.append(("sd ls EASELTEST", command(port, "sd ls EASELTEST")))
+            replies.append(("sd ls EASELLET", command(port, "sd ls EASELLET")))
         replies.append(("wifi off", command(port, "wifi off", timeout=30.0)))
 
     for label, reply in replies:

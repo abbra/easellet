@@ -340,7 +340,7 @@ function buildCard(initial) {
     const deleteIt = text("button", t("card.delete"), "danger");
     // The frame refuses deletion outside its writable directory anyway; the
     // button is only offered where it would succeed.
-    deleteIt.hidden = !image.name.toUpperCase().startsWith("EASELTEST/");
+    deleteIt.hidden = !image.name.toUpperCase().startsWith("EASELLET/");
     line.append(text("span", name), showIt, deleteIt);
     figure.append(small, line);
     const query = `path=${encodeURIComponent(image.name)}`;

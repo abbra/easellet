@@ -4,7 +4,7 @@
 The page is served from `web/index.html` and the converter from `tools/el6.mjs`,
 so the browser runs exactly the files the firmware would embed; only the API is
 faked. Every route answers with the same shape and the same status codes as
-`src/web.rs`, including the refusal to delete anything outside `EASELTEST`, so a
+`src/web.rs`, including the refusal to delete anything outside `EASELLET`, so a
 page that works here works on the frame.
 
     tools/portal-mock.py --count 60 --port 8130
@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from convert import HEIGHT, PALETTE, WIDTH, frame_from_rgb  # noqa: E402
 
 FRAME_BYTES = WIDTH * HEIGHT // 2
-WRITABLE = "EASELTEST"
+WRITABLE = "EASELLET"
 
 
 def synthetic(index: int, total: int) -> bytes:

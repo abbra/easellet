@@ -28,7 +28,7 @@ loads and refreshes in 33.9 s. The driver and the converter apply the vendor's f
 180-degree rotation: both axes are flipped, x=0 is the viewer's left edge, and the
 bar order is black, yellow, red, blue, green, white. The audio stage uses ES8311
 playback and ES7210 capture at 24 kHz/16-bit stereo. The commands `audio level`,
-`audio tone`, `audio rec` (which writes `/sdcard/EASELTEST/REC.WAV`) and `audio play
+`audio tone`, `audio rec` (which writes `/sdcard/EASELLET/REC.WAV`) and `audio play
 <file.wav>` are available. The SD test directory is writable. Playback and capture
 share the one full-duplex I²S port, so the firmware enables both directions
 together. ESP-IDF makes the later-initialized TX channel the clock consumer. A TX
@@ -106,7 +106,7 @@ with `help`.
 | `audio tone [ms]` | Plays a 440 Hz stereo tone through the speaker for 100..2000 ms. |
 | `audio loop [ms]` | Plays the tone and captures it at the same time. Reports capture statistics. |
 | `audio level <ms>` | Captures audio and reports rms, peak and correlation for 100..5000 ms. |
-| `audio rec <1..10>` | Gives a double beep cue, then records to `/sdcard/EASELTEST/REC.WAV`. |
+| `audio rec <1..10>` | Gives a double beep cue, then records to `/sdcard/EASELLET/REC.WAV`. |
 | `audio hex` | Shows the first and last captured frames as hex pairs. |
 | `audio play <file>` | Plays a 24 kHz/16-bit/stereo WAV from `/sdcard`. |
 | `audio volume <db>` | Sets the ES8311 DAC volume from -24 to +12 dB and applies it immediately. |
@@ -119,7 +119,7 @@ with `help`.
 | `wifi off` | Disconnects and powers down the radio. |
 | `wifi auto on` / `wifi auto off` | Sets the boot-join flag. Takes effect at the next boot. `config save` makes it survive a power cycle. |
 | `config` | Shows the effective settings, their source and the file path. |
-| `config save` | Writes `/sdcard/EASELTEST/CONFIG.TXT`, including the passphrase. |
+| `config save` | Writes `/sdcard/EASELLET/CONFIG.TXT`, including the passphrase. |
 | `ai status` | Shows the resolved assistant endpoints, language, voice and model. The token is redacted. |
 | `ai selftest` | Builds every assistant request from the settings and sends nothing. |
 | `ai stt [ms]` | Waits for KEY, captures, converts to µ-law, posts to `/stt` and prints the transcript. |
@@ -247,8 +247,12 @@ sudo udevadm control --reload
 There is no key/value store. The firmware never initializes NVS. The radio runs with
 flash storage disabled. The USB-Serial/JTAG peripheral resets the chip whenever a
 host opens the port, so RAM settings cannot survive between sessions. The only
-durable place is the card, at `/sdcard/EASELTEST/CONFIG.TXT`. This is an 8.3 name
-because FATFS is built with `CONFIG_FATFS_LFN_NONE`.
+durable place is the card, at `/sdcard/EASELLET/CONFIG.TXT`. This is an 8.3 name
+because FATFS is built with `CONFIG_FATFS_LFN_NONE`. The directory is the product
+name, which is exactly eight characters for that reason: a longer name is not a
+compile error, it makes every write fail with `EINVAL` — `config save`, uploads and
+recordings alike — and only a card in the frame shows it. A directory from before
+the rename (`PFTEST`) is not read, so its settings must be typed once more.
 
 ```
 # keys: wifi.auto (1 = join at boot and stay online), wifi.ssid,
@@ -287,7 +291,7 @@ down, since there is nothing to serve, and boot continues normally.
 `config save` writes the file from live state, so `audio volume -6` followed by
 `config save` survives a reboot. The values that `audio status` reports are the
 values that are persisted. Nothing is written at boot, and the firmware creates only
-this one file under `EASELTEST`.
+this one file under `EASELLET`.
 
 ## OpenDisplay and the bridge
 
@@ -510,10 +514,10 @@ persist it,
 ```
 ai url http://192.168.50.93:8095    # live at once; `-` clears it
 ai key easellet-lan-2026         # optional, must match --token; never echoed
-config save                        # writes both to EASELTEST/CONFIG.TXT
+config save                        # writes both to EASELLET/CONFIG.TXT
 ```
 
-or put the same two lines in `EASELTEST/CONFIG.TXT` with the card out of the device:
+or put the same two lines in `EASELLET/CONFIG.TXT` with the card out of the device:
 
 ```
 ai.url=http://192.168.50.93:8095
@@ -625,7 +629,7 @@ tools/mkfont.py > src/font.rs
 ## Slideshow
 
 `gallery start` walks the `.bmp` and `.el6` files in one directory in sorted order
-and refreshes the panel every interval. The default directory is `EASELTEST` and the
+and refreshes the panel every interval. The default directory is `EASELLET` and the
 default interval is five minutes. Both fall back to `gallery.dir` and `gallery.secs`
 from the settings file, so a bare `gallery start` resumes what the card remembers.
 `gallery next` advances once. `gallery auto` at boot comes from `gallery.auto=1`.
@@ -653,7 +657,7 @@ so an unreadable file cannot spin the loop. The firmware drops the entry itself 
 this round, so a card with mixed sizes and JPEGs still cycles instead of sticking:
 
 ```
-ERR gallery EASELTEST/BROKEN.BMP: ERR image bmp signature
+ERR gallery EASELLET/BROKEN.BMP: ERR image bmp signature
 ```
 
 Mixed sizes are the normal case. The vendor card's `06_USE~1` holds three 800x480
@@ -687,7 +691,7 @@ has no other owner, and a 1 MB body cannot be handed over as one job (`src/ota.r
 | `POST /show?path=…` | Decodes an existing picture and starts a refresh. |
 | `POST /delete?path=…` | Removes one picture. Refused outside the writable directory. |
 | `GET /settings` | Serves the current settings as JSON. Secrets are reduced to `true`/`false`. |
-| `POST /settings` | Takes form fields, applies them and writes `EASELTEST/CONFIG.TXT`. |
+| `POST /settings` | Takes form fields, applies them and writes `EASELLET/CONFIG.TXT`. |
 | `GET /sensors` | Serves battery data (present, USB, charging, mV, %) and room climate as JSON. Read every 30 s. |
 | `GET /ota` | Shows which app slot runs, its state, the slot that an upload would replace, and that slot's size. |
 | `POST /ota` | Takes a `.bin`, writes it to the inactive slot, which becomes the boot slot. |
@@ -748,7 +752,7 @@ only queue on it.
 **Deleting asks twice**, in place. The first click arms the button («Delete 12?»,
 red). The second click within five seconds acts. There is no modal, because a dialog
 that interrupts is a dialog that everybody dismisses without reading. The firmware
-refuses a deletion outside `EASELTEST`. The vendor's own pictures are readable and
+refuses a deletion outside `EASELLET`. The vendor's own pictures are readable and
 permanent, and the page therefore shows them without a checkbox and with «not
 deletable» instead of a button that is bound to fail. The policy lives in
 `image::removable`, with tests for `06_USE~1`, `CONFIG.TXT`, `..` and backslash
@@ -766,14 +770,14 @@ tools/portal-mock.py --count 60 --port 8130      # then open http://127.0.0.1:81
 It also serves `tools/portal-harness.html`, which drives the real page in a
 same-origin iframe. The harness first checks the interface language (English by
 default, the switch and the stored choice). It then checks paging, search, the
-two-click delete, the refusal outside `EASELTEST`, the tabs and the settings form. The
+two-click delete, the refusal outside `EASELLET`, the tabs and the settings form. The
 rest runs in Russian, so the translation is exercised and not merely present:
 
 ```
 ok язык по умолчанию: en «Photo»      ok переключение на русский: Фотография
-ok список: 62 в EASELTEST/UPLOADS        ok после удаления: 52 в EASELTEST/UPLOADS
+ok список: 62 в EASELLET/UPLOADS        ok после удаления: 52 в EASELLET/UPLOADS
 ok на странице 12 карточек: 12        ok картинка прошивки: ... "не удаляется"
-ok вторая страница ...                ok удаление вне EASELTEST: 403 ...
+ok вторая страница ...                ok удаление вне EASELLET: 403 ...
 ok вкладка «Прошивка»: работает ota_0 · подтверждена ...
 ```
 
@@ -786,10 +790,10 @@ round trip: `pack(unpack(frame), {dither: false})` is byte-identical to `frame`,
 A wrong rotation or nibble order cannot pass this test.
 
 Uploads go to the slideshow's own directory (`gallery.dir`, default
-`EASELTEST/UPLOADS`, created on first use), so a picture sent from a browser is also a
+`EASELLET/UPLOADS`, created on first use), so a picture sent from a browser is also a
 picture that the frame will cycle through. If the slideshow is running, the new file
 jumps the queue instead of waiting a full lap. The firmware writes uploads only
-inside `EASELTEST`. If `gallery.dir` points at the vendor's pictures, the slideshow
+inside `EASELLET`. If `gallery.dir` points at the vendor's pictures, the slideshow
 still shows them, but the firmware refuses an upload.
 
 **Firmware updates go through the same page.** The «Firmware» tab reads `GET /ota`

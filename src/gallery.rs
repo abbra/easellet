@@ -349,7 +349,7 @@ mod tests {
         // clamped, so a test that names a number below it is really testing the
         // clamp and not the schedule.
         let interval = Duration::from_secs(u64::from(MIN_INTERVAL_SECS));
-        gallery.start("EASELTEST/GALLERY", images(&["b.bmp", "a.bmp"]), interval);
+        gallery.start("EASELLET/GALLERY", images(&["b.bmp", "a.bmp"]), interval);
         // Sorted, so the card's own order does not decide what shows first.
         assert!(gallery.wants_advance(now, true));
         assert_eq!(gallery.take_next(now).as_deref(), Some("a.bmp"));
@@ -362,7 +362,7 @@ mod tests {
     fn an_upload_jumps_the_queue_and_a_removal_keeps_the_position() {
         let mut gallery = Gallery::stopped();
         gallery.start(
-            "EASELTEST/UPLOADS",
+            "EASELLET/UPLOADS",
             images(&["a.el6", "b.el6", "c.el6"]),
             Duration::from_secs(300),
         );
@@ -477,11 +477,11 @@ mod tests {
         let mut gallery = Gallery::stopped();
         let now = Instant::now();
         let interval = Duration::from_secs(u64::from(MIN_INTERVAL_SECS));
-        gallery.start("EASELTEST/GALLERY", images(&["a.bmp", "b.bmp"]), interval);
+        gallery.start("EASELLET/GALLERY", images(&["a.bmp", "b.bmp"]), interval);
         let _ = gallery.take_next(now);
         gallery.record_advance();
         let status = gallery.status();
-        assert!(status.contains("dir=/sdcard/EASELTEST/GALLERY"), "{status}");
+        assert!(status.contains("dir=/sdcard/EASELLET/GALLERY"), "{status}");
         assert!(status.contains("next=b.bmp"), "{status}");
         assert!(
             status.contains(&format!("interval_s={}", interval.as_secs())),
