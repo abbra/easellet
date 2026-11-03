@@ -6,6 +6,10 @@ source scripts/env.sh
 # written by scripts/release.sh. Drift between them makes one slot of the frame
 # lie about itself, so it is checked before anything is built.
 python3 tools/check-version.py
+# The index the bridge downloads is written by tools/firmware-index.py in the tag
+# job. Its merge rules are cheap to check and a wrong index is a release asset,
+# so they are checked here as well.
+python3 tools/firmware-index.py --self-test
 cargo fmt --check
 # Console parser is pure std; test natively without trying to run Xtensa binaries.
 for module in clock config diag image pcm bridge vad gallery web buttons power actions firmware; do

@@ -276,3 +276,5 @@ jobs:
             refs/tags/v*) python3 tools/check-version.py "${GITHUB_REF#refs/tags/}" ;;
             *) python3 tools/check-version.py ;;
           esac
+      - name: The release index merges as its own rules say
+        run: python3 tools/firmware-index.py --self-test
