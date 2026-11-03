@@ -21,6 +21,11 @@ on:
       version:
         description: "The version to release, without the v, e.g. 0.2.0"
         required: true
+      publish:
+        description: "Publish the release, or leave it as a draft to inspect"
+        type: choice
+        options: ["true", "false"]
+        default: "true"
 
 permissions:
   contents: write
@@ -234,4 +239,10 @@ jobs:
             "dist/$image" "dist/$image.sha256" dist/bootloader.bin \
             dist/partition-table.bin dist/firmware-index.json \
             dist/build.txt
-          gh release edit "$TAG" --draft=false --latest
+          # A dry run builds, uploads and stops at the draft, which is the only way
+          # to look at a release before the world can download it.
+          if [ "${{ inputs.publish }}" != "false" ]; then
+            gh release edit "$TAG" --draft=false --latest
+          else
+            echo "left as a draft: https://github.com/$GH_REPO/releases"
+          fi
