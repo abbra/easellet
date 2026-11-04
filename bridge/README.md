@@ -114,9 +114,9 @@ start. Digital silence shows no energy.
 Run these commands from the `bridge/` directory:
 
 ```bash
-./build.sh run                              # stubs only, no models, no dependencies
+./build.sh run                              # stub backends; no model download
 ./build.sh run -- --token s3cret            # require a bearer token
-./build.sh run -- --stt whisper:small \
+./build.sh serve -- --stt whisper:small \
                   --llm 'cmd:llama-cli -m model.gguf' \
                   --tts 'cmd:piper --model ru_RU-irina-medium.onnx --output-raw'
 ```
@@ -133,6 +133,16 @@ ai.key=s3cret          # optional, must match --token
 `../.cargo/config.toml` pins the xtensa target and `-Zbuild-std`. Cargo reads its
 config by walking up from the *working* directory. The script therefore builds from
 a scratch directory instead of duplicating the configuration.
+
+For `run` and `serve`, the bridge runs from the repository root, so relative
+backend commands and their arguments (such as `bridge/scripts/llm-local.py`)
+resolve there, as do relative `--config` paths. When launching the binary
+directly, relative paths resolve from the directory it is launched in.
+
+Whisper support is compiled in by default, including for `run`; use `serve` for
+the optimized release build when recognizing speech. Existing release binaries
+must be rebuilt with `./build.sh whisper` before `scripts/serve-local.sh` uses
+them. A build with `--no-default-features` omits in-process Whisper.
 
 ## OpenDisplay server
 
@@ -296,12 +306,89 @@ Volume stops at 0.85 on purpose. At 1.0 piper peaks at full scale and clips a
 couple of samples. The frame plays at 0 dB into a small speaker, where that is
 distortion rather than loudness.
 
+### OmniVoice.cpp
+
+[`OmniVoice.cpp`](https://github.com/ServeurpersoCom/omnivoice.cpp) is a native
+C++ synthesizer with Vulkan support and a resident model server. It supports
+Russian, English, Finnish and French. **Its pretrained model weights are
+[CC-BY-NC 4.0](https://huggingface.co/Serveurperso/OmniVoice-GGUF): non-commercial
+use only.** The C++ code is MIT licensed.
+
+Build it on the bridge host; Vulkan development headers, `glslc`, CMake, a C++
+compiler, `ffmpeg` and Python `langdetect` are required. For example, on Fedora
+the Vulkan build packages are `vulkan-loader-devel` and `glslc`.
+
+```bash
+dir="$HOME/.local/share/easellet-bridge/omnivoice"
+git clone https://github.com/ServeurpersoCom/omnivoice.cpp.git "$dir"
+git -C "$dir" checkout --detach 1a468d8b9d65b3544ca1004d2d7c05dfc65d1f3e
+git -C "$dir" submodule update --init --recursive
+cmake -S "$dir" -B "$dir/build" -DCMAKE_BUILD_TYPE=Release -DGGML_VULKAN=ON
+cmake --build "$dir/build" --parallel 4
+uvx --from huggingface-hub hf download Serveurperso/OmniVoice-GGUF \
+    omnivoice-base-Q8_0.gguf omnivoice-tokenizer-Q8_0.gguf \
+    --revision 017094167b5c9ed565a5076ac9b3b93c5ecf5c73 --local-dir "$dir/models"
+```
+
+Start the server and keep it running before starting the bridge:
+
+```bash
+"$dir/build/tts-server" --model "$dir/models/omnivoice-base-Q8_0.gguf" \
+    --codec "$dir/models/omnivoice-tokenizer-Q8_0.gguf" \
+    --device Vulkan0 --host 127.0.0.1 --port 8099
+```
+
+The server has no authentication: keep it bound to localhost. In bridge Settings,
+set **Synthesis** to `cmd:bridge/scripts/tts-omnivoice.py` and restart the bridge.
+The adapter sends text to the server, chooses the language using the same detector
+and hint as Piper, and converts its 24 kHz WAV to 16 kHz PCM. `ai.voice` is ignored.
+`EASEL_OMNIVOICE_URL` overrides the default
+`http://127.0.0.1:8099/v1/audio/speech`; text is sent to that URL.
+
+On this host the resident server used the Radeon 890M through Vulkan. Short test
+answers took approximately 1.4–2.1 seconds through the bridge. The server needs
+to be started again after a reboot unless managed by a service.
+
+### Chatterbox Multilingual
+
+[`Chatterbox Multilingual`](https://github.com/resemble-ai/chatterbox) is an
+optional open-source neural synthesizer for Russian, English, Finnish and French.
+It runs locally and uses a built-in voice; `ai.voice` does not select a voice.
+Install it in an isolated Python environment on the bridge host:
+
+```bash
+mkdir -p ~/.local/share/easellet-bridge
+uv venv --python 3.11 ~/.local/share/easellet-bridge/chatterbox
+uv pip install --python ~/.local/share/easellet-bridge/chatterbox/bin/python \
+    --torch-backend cpu \
+    'git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2' \
+    langdetect
+```
+
+The first synthesis downloads model files from Hugging Face. Warm the cache before
+using the frame (the first download can exceed the frame's 60-second HTTP timeout):
+
+```bash
+printf 'Здравствуйте.' | LANGS=ru bridge/scripts/tts-chatterbox.sh > /dev/null
+```
+
+Set **Synthesis** in the bridge Settings to `cmd:bridge/scripts/tts-chatterbox.sh`
+and restart the bridge, or pass that value as `--tts` to `bridge/build.sh serve`.
+`EASEL_CHATTERBOX_PYTHON` can point at a different compatible Python environment.
+The supplied installation uses CPU PyTorch; a compatible GPU-enabled PyTorch
+installation can use the GPU.
+
+The adapter chooses the answer language using the same detector as Piper, then the
+frame's language hint. It loads the model for each answer. On this host, short
+cached utterances took approximately 17–32 seconds; longer answers may exceed the
+frame's 60-second timeout. Chatterbox adds its upstream audio watermark. Piper
+remains available and is substantially faster on this host.
+
 ## Answers that are actually answers
 
-`scripts/llm-local.py` puts a real language model behind `/llm` instead of the stub
-sentence. It posts to a local `llama-server` and prints the reply, so the whole
-pipeline (recognition, model, voice) is offline. There is no provider key, no
-account, and no request leaves the LAN.
+`scripts/llm-local.py` puts a language model behind `/llm` instead of the stub
+sentence. With a local `llama-server`, the pipeline (recognition, model, voice)
+can run offline without a provider key.
 
 ```bash
 # One server, weights resident. A short answer takes 1.4–2.1 s on this host.
@@ -313,6 +400,32 @@ account, and no request leaves the LAN.
     --llm cmd:bridge/scripts/llm-local.py \
     --tts cmd:bridge/scripts/tts-piper.sh
 ```
+
+For an OpenAI-compatible endpoint requiring authentication, set **Model address
+(chat completions)** and **Model API key (Bearer)** in the bridge settings. The
+key is optional, stored in the owner-only settings file, and never returned to the
+browser. Leave the field blank to retain it or enter `-` to clear it. Alternatively,
+set `EASEL_LLM_URL` and `EASEL_LLM_API_KEY` in the bridge environment; environment
+values override settings for that run. The key is sent to the configured model
+endpoint, so use HTTPS outside trusted local networks.
+
+### Conversation context
+
+Questions to the model from the same frame within `context_seconds` (default 120)
+continue the conversation. Set **Conversation timeout** in Settings or
+`context_seconds` in `bridge.toml`; 0 disables it, and the maximum is 86400 seconds.
+Say «Рамка, новый разговор», «Рамка, смени контекст», “new conversation” or
+“change context” to start over immediately. Include the wake word when voice
+activation requires it. The web assistant has its own separate conversation.
+
+Context is held in memory, separated by client IP (clients behind the same address
+share it), limited to four previous question-and-answer pairs per client and 32
+clients. A turn over 4096 bytes (question plus answer) clears that conversation.
+Context expires after inactivity and is dropped on restart; expired entries are
+removed on the next model request. It includes successful model answers, not frame
+commands, plugin results or failed requests. `llm-local.py` sends those pairs to the
+configured model endpoint; other `cmd:` backends receive the current question on
+stdin and can read `EASEL_LLM_CONTEXT` as a JSON array of OpenAI-style messages.
 
 Earlier comparison on this host (24 cores, no GPU), Russian prompt "Почему небо голубое?",
 answer quality judged by listening and reading. The current model is
@@ -326,16 +439,15 @@ Qwen3-4B-Instruct-2507 Q4_K_M, measured at 1.4–2.1 s for a one-sentence answer
 | T-lite-instruct 8B Q4_K_M | 4.6 GB | ~20 s | Russian-tuned but 2.8 t/s, unusable aloud |
 | Qwen3.8-27B Q4_K_M | 15.9 GB | — | no GPU, far slower than speech |
 
-Models that produce a reasoning trace first are wrong for this device. The frame
-wants one sentence, and a reasoning trace spends the whole token budget on text that
-is never spoken. The system prompt therefore asks for one or two sentences with no
-lists, markdown or formulas. The reply is synthesized and painted on a Spectre-6
-panel. Both outputs need short, plain text.
-
-`llm-local.py` also strips markdown markers and wrapping quotes. When a model
-answers only into `reasoning_content`, it says so instead of reporting an empty
-reply. That message names the failure, so an empty reply is not reported as a valid
-answer.
+The frame needs a short spoken answer rather than a reasoning trace. `llm-local.py`
+requests `chat_template_kwargs: {"enable_thinking": false}`, supported by local
+servers such as llama.cpp and Strata; it does not guess model capabilities from the
+model name. If a strict OpenAI-compatible server reports `unknown_parameter` for
+the field, the request is retried without it. A server or model may also ignore it;
+if the model answers only into `reasoning_content`, the bridge reports the failure
+instead of speaking the trace.
+The system prompt asks for one or two sentences with no lists, markdown or formulas,
+and the script strips markdown markers and wrapping quotes.
 
 Earlier frame run with Phi-4-mini, after replacing the stub:
 
@@ -372,11 +484,11 @@ Through the frame: `llm_ms=32` and `reply="458 умножить на 714 рав�
 The model takes 1.4 s for the same question. A control question still costs the
 usual `llm_ms=892`.
 
-## `--features whisper`: rwhisper in-process
+## rwhisper in-process
 
 `rwhisper` is candle-based Whisper in pure Rust: no whisper.cpp build, no ffmpeg, no
-Python, no server to keep running. The model is multilingual and fixed to Russian at
-load time, because a per-request language would mean reloading the weights.
+Python, no server to keep running. The multilingual model detects the language of
+each utterance.
 
 ```bash
 ./build.sh whisper                                  # release build, models linked in
@@ -424,9 +536,8 @@ is also a direct optional dependency here, at the same version, because
 therefore wraps samples in a `SamplesBuffer`. No decoders are requested: the bridge
 only ever hands over raw PCM.
 
-The `cmd:` route above reaches the same models with no Rust dependencies at all. It
-stays the answer for a host where the weights do not fit or the ALSA headers are
-unavailable.
+The `cmd:` route above can be used with a `--no-default-features` build when the
+weights do not fit or the ALSA headers are unavailable.
 
 ## Why here and not in the firmware
 
