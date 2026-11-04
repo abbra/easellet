@@ -144,6 +144,34 @@ the optimized release build when recognizing speech. Existing release binaries
 must be rebuilt with `./build.sh whisper` before `scripts/serve-local.sh` uses
 them. A build with `--no-default-features` omits in-process Whisper.
 
+### Installing a prebuilt bridge
+
+Build the release binary with `./bridge/build.sh whisper`, or obtain a compatible
+prebuilt `easellet-bridge`, then install it with:
+
+```sh
+PREFIX="$HOME/.local" ./bridge/install.sh /path/to/easellet-bridge
+"$HOME/.local/bin/easellet-bridge"
+```
+
+Omit the binary argument to install `bridge/target/release/easellet-bridge`.
+`PREFIX` defaults to `/usr/local`; set `DESTDIR` to an absolute staging directory
+for packaging, for example `DESTDIR="$PWD/stage" PREFIX=/usr ./bridge/install.sh`.
+The installation contains the executable in `bin`, plugins in
+`share/easellet-bridge/plugins`, and backend adapters in
+`libexec/easellet-bridge`. User plugins beside the settings file take precedence.
+The web interface is embedded in the executable. Python and any selected backend's
+own dependencies, models and services must be installed separately; card rendering
+also requires DejaVu Sans fonts.
+
+Configuration and writable job data remain under the user's config directory;
+installation does not overwrite them. Existing `cmd:bridge/scripts/...` settings
+are relative to the process working directory and should be changed to absolute
+installed paths, for example
+`cmd:/usr/local/libexec/easellet-bridge/tts-omnivoice.py`. Relative paths in custom
+commands still resolve from the working directory. Start the installed executable
+directly; `serve-local.sh` is a development launcher for the source tree.
+
 ## OpenDisplay server
 
 The bridge can act as the OpenDisplay device for one frame. Clients such as Home
