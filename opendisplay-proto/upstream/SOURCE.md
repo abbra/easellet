@@ -1,8 +1,8 @@
 # Vendored OpenDisplay headers
 
-Byte-for-byte copies, never edited here. `tests/header_sync.rs` compares the
-crate's constants and struct sizes against them, so an upstream change fails the
-build until it is handled.
+These headers are byte-for-byte copies of upstream files; do not edit them here.
+`tests/header_sync.rs` checks the crate's constants and struct sizes against
+the headers.
 
 | File | Upstream | Commit | SHA-256 |
 | --- | --- | --- | --- |
@@ -14,5 +14,8 @@ Firmware repository is GPL-3.0, and this project is GPL-3.0-or-later (`LICENSE`
 at the root), so vendoring the headers, and reusing upstream code where useful,
 is compatible.
 
-To update: copy both files from a newer upstream commit, record it here, and run
-`./build.sh test`.
+To update the headers:
+
+1. Copy both files from the same newer upstream commit.
+2. Record the commit and SHA-256 hashes in the table above.
+3. From `opendisplay-proto/`, run `./build.sh test`.
