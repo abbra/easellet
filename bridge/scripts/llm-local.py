@@ -6,14 +6,14 @@ the answer on stdout, so this is a plain filter in front of `llama-server`'s
 OpenAI-compatible chat endpoint. Nothing leaves the machine: no provider key, no
 account, no round trip past the LAN.
 
-Why a server and not `llama-cli`: a 2.3 GB model takes seconds to map and warm up, and
-`cmd:llama-cli` would pay that for every sentence. `llama-server` keeps the weights
-resident, so a short answer costs ~1.3 s instead of ~15 s.
+Why a server and not `llama-cli`: loading the model for every sentence is costly.
+`llama-server` keeps the weights resident; Qwen3-4B takes 1.4–2.1 s for a short
+answer on this host.
 
 Start the server once (the model is already on this host):
 
     ~/local/19cce691/llama-server \\
-        -m /home/abokovoy/tmp/small-llms/gguf/Phi-4-mini-instruct-Q4_K_M.gguf \\
+        -m ~/models/crane/qwen3-4b/Qwen3-4B-Instruct-2507-Q4_K_M.gguf \\
         --host 127.0.0.1 --port 8096 -c 4096 -t 24 --jinja
 
 then point the bridge at it:
@@ -38,8 +38,8 @@ Crane loads only GGUF architectures it knows. Phi-4-mini is `phi3`, which it rej
 insists on a `model` field that llama-server ignores, so the name is discovered from
 `/v1/models` — see `model_name`.
 
-Model choice, measured on this host (24 cores, no GPU) with the Russian prompt
-"Почему небо голубое?":
+Earlier model comparison on this host (24 cores, no GPU) with the Russian prompt
+"Почему небо голубое?". The current model is Qwen3-4B-Instruct-2507 Q4_K_M:
 
     Phi-4-mini-instruct Q4_K_M   2.3 GB   1.3 s   "Это связано с длиной волн солнечного света."
     granite-4.2-3b Q4_K_M        2.1 GB   9.6 s   80 tokens of English reasoning, no answer

@@ -284,10 +284,9 @@ pipeline (recognition, model, voice) is offline. There is no provider key, no
 account, and no request leaves the LAN.
 
 ```bash
-# One server, weights resident. A short answer then costs ~1.3 s; reloading the
-# model per sentence with `cmd:llama-cli` would cost ~15 s.
+# One server, weights resident. A short answer takes 1.4–2.1 s on this host.
 ~/local/19cce691/llama-server \
-    -m /home/abokovoy/tmp/small-llms/gguf/Phi-4-mini-instruct-Q4_K_M.gguf \
+    -m ~/models/crane/qwen3-4b/Qwen3-4B-Instruct-2507-Q4_K_M.gguf \
     --host 127.0.0.1 --port 8096 -c 4096 -t 24 --jinja
 
 ./bridge/build.sh serve -- --stt whisper:small \
@@ -295,12 +294,13 @@ account, and no request leaves the LAN.
     --tts cmd:bridge/scripts/tts-piper.sh
 ```
 
-Measured on this host (24 cores, no GPU), Russian prompt "Почему небо голубое?",
-answer quality judged by listening and reading:
+Earlier comparison on this host (24 cores, no GPU), Russian prompt "Почему небо голубое?",
+answer quality judged by listening and reading. The current model is
+Qwen3-4B-Instruct-2507 Q4_K_M, measured at 1.4–2.1 s for a one-sentence answer.
 
 | Model | Size | Answer | Verdict |
 |---|---|---|---|
-| Phi-4-mini-instruct Q4_K_M | 2.3 GB | 1.3 s, *«Это связано с длиной волны солнечного света.»* | chosen |
+| Phi-4-mini-instruct Q4_K_M | 2.3 GB | 1.3 s, *«Это связано с длиной волны солнечного света.»* | previously chosen |
 | granite-4.2-3b Q4_K_M | 2.1 GB | 9.6 s | 80 tokens of English reasoning, no answer |
 | LFM2.5-8B-A1B Q4_K_M | 4.8 GB | 5.7 s | same: `reasoning_content` only |
 | T-lite-instruct 8B Q4_K_M | 4.6 GB | ~20 s | Russian-tuned but 2.8 t/s, unusable aloud |
@@ -317,7 +317,7 @@ answers only into `reasoning_content`, it says so instead of reporting an empty
 reply. That message names the failure, so an empty reply is not reported as a valid
 answer.
 
-Through the frame, with the stub replaced:
+Earlier frame run with Phi-4-mini, after replacing the stub:
 
 ```
 ai ask Почему небо голубое?
@@ -328,7 +328,7 @@ ai ask Почему небо голубое?
 
 The frame's `ai.model` is logged as `model_hint=` because the bridge cannot honor
 it: the model is whatever the server loaded. The script names the real model on
-stderr, so both appear in the log:
+stderr; this earlier Phi-4-mini run shows both in the log:
 
 ```
   llm cmd: model_hint=gemini-2.5-flash reply=44 chars
