@@ -3,8 +3,8 @@
 
 The bridge runs `cmd:` backends as a program reading the prompt on stdin and writing
 the answer on stdout, so this is a plain filter in front of `llama-server`'s
-OpenAI-compatible chat endpoint. Nothing leaves the machine: no provider key, no
-account, no round trip past the LAN.
+OpenAI-compatible chat endpoint. A local server needs no provider key or account;
+an optional API key can authenticate requests to a configured endpoint.
 
 Why a server and not `llama-cli`: loading the model for every sentence is costly.
 `llama-server` keeps the weights resident; Qwen3-4B takes 1.4–2.1 s for a short
@@ -47,15 +47,14 @@ Earlier model comparison on this host (24 cores, no GPU) with the Russian prompt
     T-lite-instruct 8B Q4_K_M    4.6 GB   ~20 s   2.8 t/s, unusable for speech
     Qwen3.8-27B Q4_K_M          15.9 GB   —       no GPU, far too slow
 
-The two instruct models that "thought" before answering are exactly wrong here: the
-frame wants one sentence, and a reasoning trace spends the whole budget on words it
-then reads aloud. Hence a non-reasoning model, and a system prompt that forbids lists
-and markdown — the reply is spoken and drawn on a Spectre-6 panel, both of which
-punish structure that a chat window rewards.
+The frame needs a short spoken answer, not a reasoning trace. The request asks
+compatible local servers to disable thinking and the system prompt forbids lists
+and markdown, which are awkward on the panel and when spoken.
 
 Environment: EASEL_LLM_URL (default http://127.0.0.1:8096/v1/chat/completions),
-EASEL_LLM_MODEL (discovered from `/v1/models`, then "local"), EASEL_LLM_SYSTEM,
-EASEL_LLM_MAX_TOKENS (96), EASEL_LLM_TEMPERATURE (0.4), EASEL_LLM_TIMEOUT (60).
+EASEL_LLM_API_KEY (optional bearer token), EASEL_LLM_MODEL (discovered from
+`/v1/models`, then "local"), EASEL_LLM_SYSTEM, EASEL_LLM_MAX_TOKENS (96),
+EASEL_LLM_TEMPERATURE (0.4), EASEL_LLM_TIMEOUT (60).
 """
 
 from __future__ import annotations
@@ -75,6 +74,7 @@ else:
     DetectorFactory.seed = 0
 
 URL = os.environ.get("EASEL_LLM_URL", "http://127.0.0.1:8096/v1/chat/completions")
+API_KEY = os.environ.get("EASEL_LLM_API_KEY", "")
 SYSTEM = os.environ.get(
     "EASEL_LLM_SYSTEM",
     "Ты — голосовой помощник в фоторамке. Отвечай на языке вопроса — русском, "
@@ -145,9 +145,12 @@ def model_name() -> str:
     """
     if MODEL:
         return MODEL
-    catalog = URL.rsplit("/", 1)[0] + "/models"
+    catalog = URL.rsplit("/", 2)[0] + "/models"
+    request = urllib.request.Request(catalog)
+    if API_KEY:
+        request.add_unredirected_header("Authorization", f"Bearer {API_KEY}")
     try:
-        with urllib.request.urlopen(catalog, timeout=5) as response:
+        with urllib.request.urlopen(request, timeout=5) as response:
             body = json.load(response)
     except (OSError, ValueError):
         return "local"
@@ -167,6 +170,7 @@ def main() -> int:
     prompt = sys.stdin.read().strip()
     if not prompt:
         return fail("empty prompt")
+    context = json.loads(os.environ.get("EASEL_LLM_CONTEXT") or "[]")
 
     lang = question_language(prompt)
     system = (
@@ -177,28 +181,48 @@ def main() -> int:
         "model": model_name(),
         "messages": [
             {"role": "system", "content": system},
+            *context,
             {"role": "user", "content": prompt},
         ],
         "max_tokens": MAX_TOKENS,
         "temperature": TEMPERATURE,
         "stream": False,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
-    request = urllib.request.Request(
-        URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            body = json.load(response)
-    except urllib.error.HTTPError as error:
-        return fail(f"{URL} answered {error.code}: {error.read()[:200]!r}")
-    except OSError as error:
-        return fail(
-            f"cannot reach {URL} ({error}); start it with "
-            "llama-server -m <model.gguf> --host 127.0.0.1 --port 8096 -c 4096 --jinja"
+    while True:
+        request = urllib.request.Request(
+            URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
+        if API_KEY:
+            request.add_unredirected_header("Authorization", f"Bearer {API_KEY}")
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                body = json.load(response)
+            break
+        except urllib.error.HTTPError as error:
+            detail = error.read(4096)
+            try:
+                rejected = json.loads(detail).get("error", {})
+            except (ValueError, AttributeError):
+                rejected = {}
+            if (
+                error.code == 400
+                and isinstance(rejected, dict)
+                and rejected.get("code") == "unknown_parameter"
+                and rejected.get("param") == "chat_template_kwargs"
+                and "chat_template_kwargs" in payload
+            ):
+                del payload["chat_template_kwargs"]
+                continue
+            return fail(f"{URL} answered {error.code}: {detail[:200]!r}")
+        except OSError as error:
+            return fail(
+                f"cannot reach {URL} ({error}); start it with "
+                "llama-server -m <model.gguf> --host 127.0.0.1 --port 8096 -c 4096 --jinja"
+            )
 
     try:
         message = body["choices"][0]["message"]
@@ -207,14 +231,12 @@ def main() -> int:
 
     text = tidy(message.get("content") or "")
     if not text:
-        # Reasoning models answer into `reasoning_content` and leave `content` empty;
-        # saying so is more useful than a bare "empty reply", because the fix is the
-        # model, not the wiring.
+        # Some models or servers cannot disable thinking.
         thinking = message.get("reasoning_content") or ""
         if thinking:
             return fail(
                 "model spent its budget reasoning and produced no answer; "
-                "use a non-reasoning instruct model"
+                "the server or model may not support disabling thinking"
             )
         return fail("model produced an empty answer")
 

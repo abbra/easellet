@@ -10,8 +10,9 @@
 # ~/.config/easellet-bridge/bridge.toml) and are edited from the web UI. The
 # first run seeds that file from the defaults below; after that only what is
 # explicitly set in the environment is passed on (and pinned for that run):
-# EASEL_ADDR, EASEL_TOKEN, EASEL_STT, EASEL_LLM, EASEL_TTS, EASEL_WAKE, EASEL_LLM_URL. EASEL_BRIDGE_DUMP
-# and EASEL_BRIDGE_LOG are debugging aids, not settings.
+# EASEL_ADDR, EASEL_TOKEN, EASEL_STT, EASEL_LLM, EASEL_TTS, EASEL_WAKE,
+# EASEL_LLM_URL, EASEL_LLM_API_KEY, EASEL_LLM_SYSTEM. EASEL_BRIDGE_DUMP and
+# EASEL_BRIDGE_LOG are debugging aids, not settings.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
