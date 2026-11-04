@@ -1,10 +1,40 @@
 # Rust firmware plan — Waveshare ESP32-S3-PhotoPainter (SKU 32408)
 
+**Historical roadmap:** this document records the original research and delivery
+plan, not the current feature list or setup instructions. Some recommendations
+and hardware observations have since changed. See the [README](README.md) for
+current usage.
+
+## Current implementation
+
+The original stages below are retained as a record of the plan, not a checklist
+of completed acceptance gates. The current code implements:
+
+| Area | Status in the code |
+| --- | --- |
+| Hardware and console | USB diagnostics, display, SD storage, audio, I²C sensors and PMIC telemetry. The display and audio rails have narrowly scoped writes. |
+| Network and settings | Wi-Fi, SNTP/RTC sync and settings stored at `EASELLET/CONFIG.TXT`; no NVS settings store. |
+| Pictures | A card slideshow, browser portal, host/browser image conversion and OpenDisplay over LAN. |
+| Assistant and bridge | Audio capture and playback through the LAN bridge, local backends, frame actions, plugins and scheduled content. |
+| Power | Button and timer deep sleep, battery telemetry and optional bridge picture fetch on timed wake. |
+| Updates | Two OTA application slots, portal uploads and bridge release installation. |
+
+The original stage 6 is **partial**: BLE diagnostics and GATT are not
+implemented. The original stage 7 still has unverified acceptance work,
+including battery-side sleep-current measurement. Code presence alone does not
+establish hardware acceptance or backup recoverability.
+
 ## Goal and interpretation
 
-Build a small Rust application that can exercise every *hardware* capability through USB, without depending on the factory cloud/AI service. Minimize handwritten code and maintenance, rather than promise an entirely Rust binary or the smallest flash image. ESP-IDF, its radio libraries, and initially some codec support will remain C underneath safe Rust interfaces.
+The original goal was a small Rust application that exercises the frame's
+hardware over USB without the factory cloud or AI service. The plan favored
+minimal handwritten code and maintenance over an entirely Rust binary or the
+smallest flash image. ESP-IDF, radio libraries and some codec support would
+remain C behind safe Rust interfaces.
 
-If “Rust” means no C dependencies whatsoever, reconsider the backend before implementation; this is a substantially different scope. Reproducing the factory Xiaozhi conversation and paid image-generation integrations is optional application work, not necessary to exercise the hardware.
+Avoiding all C dependencies would require a different backend and scope.
+Reproducing the factory Xiaozhi conversation and paid image generation was
+optional, not necessary for hardware coverage.
 
 No firmware was built or flashed during research. The working directory was initially empty, not a Git repository. No ESP USB device appeared in the initial `lsusb` inventory. Host has `cargo`, but `rustup` and `espflash` were not found on PATH.
 
@@ -144,7 +174,3 @@ Track failures as recoverable `Result`s with context, reserve panics for invaria
 - Bare-metal alternative: https://github.com/esp-rs/esp-hal (`research/esp-hal.md`).
 - Setup reference: https://docs.espressif.com/projects/rust/book/
 
-Next action: this roadmap is largely delivered — stages 1-6 (inventory, display, SD,
-I²C/RTC/PMIC diagnostics, audio, Wi-Fi and persisted settings) are implemented and
-verified on hardware. The live task queue is in `TODO.md`; see it for the next
-stage and for the loose ends this plan does not track.
