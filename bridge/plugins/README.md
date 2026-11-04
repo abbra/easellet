@@ -1,9 +1,22 @@
 # Writing a plugin for easellet-bridge
 
-A plugin is a program that decides **what** a frame should show. The bridge decides
-**how** to draw it (size, colours, orientation, dithering) for each frame, and when
-to send it. Any language works. See `research/bridge-ui-design.md` section 5 for the
-design.
+A plugin is a program that decides **what** a frame should show. The bridge
+draws its output for each frame and decides when to send it. Plugins can be
+written in any language.
+
+To use the included plugins, open the bridge's **Plugins** tab, preview a
+plugin and save it as a job. To write your own, start with `hello/` (Python) or
+`system/` (shell), then use the sections below:
+
+- [Plugin locations and naming](#layout)
+- [Manifest and parameters](#the-manifest), including
+  [translations](#the-same-text-in-another-language) and [voice phrases](#voice)
+- [Input, output and card layouts](#one-run)
+- [Included plugins](#shipped-plugins)
+- [Python SDK](#python) and [trying a plugin](#trying-it)
+- [Security](#what-a-plugin-may-not-do)
+
+Plugins run as the bridge's user. Install only programs you trust.
 
 ## Layout
 
