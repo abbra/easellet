@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""The latest open pull requests of a GitHub repository and the state of their checks.
+"""The latest open pull requests of a GitHub or Forgejo repository and their checks.
 
-A PR's state is that of its head commit, from both places CI reports to:
-check runs (GitHub Actions and other GitHub Apps) and commit statuses
-(external CI such as Jenkins or Buildkite). A failure anywhere wins (red), then
-anything still running (yellow), then success (green); a PR nobody reported on
-is blue, and one not checked yet has no square.
+A PR's state is that of its head commit. GitHub gets CI reports in two places:
+check runs (GitHub Actions and other GitHub Apps) and commit statuses (external
+CI such as Jenkins or Buildkite). Forgejo has one: its Actions write a commit
+status for every job, the way GitHub's external CI does. A failure anywhere wins
+(red), then anything still running (yellow), then success (green); a PR nobody
+reported on is blue, and one not checked yet has no square.
 """
 
 import hashlib
@@ -21,36 +22,63 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
 from easellet_plugin import Plugin  # noqa: E402
 
-FAILED = {"failure", "timed_out", "action_required", "startup_failure"}
-PASSED = {"success"}
+# What each forge is called in a message to the person who reads the run log.
+FORGES = {"github": "GitHub", "forgejo": "Forgejo"}
+# Conclusions of a GitHub check run that are not a pass, and its status states
+# together with Forgejo's two more; a warning or a skip is not a verdict.
+CHECK_FAILED = {"failure", "timed_out", "action_required", "startup_failure"}
+STATUS = {
+    "success": "ok",
+    "pending": "running",
+    "failure": "fail",
+    "error": "fail",
+    "warning": "other",
+    "skipped": "other",
+}
 # Check runs come in pages of 100; a PR with hundreds of jobs is still counted
-# whole, up to this many pages.
+# whole, up to this many pages. The combined status answers in pages of its own.
 MAX_PAGES = 5
+STATUS_PAGE = 50
 
 plugin = Plugin.read()
 repo = plugin.params["repo"].strip()
 if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
     plugin.fail(f"ci: {repo!r} is not owner/name")
+forge = plugin.params.get("forge", "github").strip()
+if forge not in FORGES:
+    plugin.fail(f"ci: {forge!r} is not a forge; use one of {', '.join(FORGES)}")
 count = int(plugin.params.get("count", "6"))
 token = plugin.params.get("token")
-headers = {"Accept": "application/vnd.github+json", "User-Agent": "easellet-bridge"}
-if token:
-    headers["Authorization"] = f"Bearer {token}"
+api = plugin.params.get("api", "").rstrip("/") or "https://api.github.com"
+# A Forgejo instance has its own address, and no default can stand for it.
+if forge == "forgejo" and api == "https://api.github.com":
+    plugin.fail("ci: a Forgejo repository needs api, for example https://codeberg.org/api/v1")
+if forge == "forgejo":
+    # Forgejo and Gitea take the token as `token`, and know nothing of GitHub's
+    # media type; both answer with the same `message` when they refuse.
+    headers = {"Accept": "application/json", "User-Agent": "easellet-bridge"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+else:
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "easellet-bridge"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 # Two requests per PR whose result is not known yet; without a token GitHub
 # allows 60 an hour, so only a few PRs are checked per run and the rest wait.
-budget = count if token else 3
-api = plugin.params.get("api", "https://api.github.com").rstrip("/")
+# A Forgejo instance has no such limit, so every PR on its card is checked.
+budget = count if token or forge == "forgejo" else 3
 # head sha -> counts; only finished commits (nothing running) are kept.
 known = dict(plugin.state.get("checks", {}))
 
 
-class GitHubError(Exception):
-    """GitHub refused a request; carries its own explanation."""
+class Refused(Exception):
+    """The forge refused a request; carries its own explanation."""
 
 
 # When the token stops working, from GitHub's own header on every answer
 # ("2026-12-01 10:00:00 +0100"); organisations such as freeipa cap token
 # lifetimes, so expiry is routine and worth a warning before it happens.
+# Forgejo reports no expiry, so there the warning is skipped rather than guessed.
 expires = None
 WARN_DAYS = 14
 
@@ -64,41 +92,66 @@ def get(path):
             return json.load(answer)
     except urllib.error.HTTPError as error:
         # GitHub says why in the body ("... forbids access via a fine-grained
-        # personal access token ...", "Resource not accessible ...", rate limit);
-        # without it a 403 is a guess.
+        # personal access token ...", "Resource not accessible ...", rate limit),
+        # and so does Forgejo ("token does not have at least one of required
+        # scopes ..."); without it a 403 is a guess.
         try:
             reason = json.load(error).get("message", "")
         except Exception:  # noqa: BLE001
             reason = ""
         where = path.split("?")[0]
-        raise GitHubError(f"GitHub {error.code} on {where}: {reason or error.reason}") from None
+        raise Refused(f"{FORGES[forge]} {error.code} on {where}: {reason or error.reason}") from None
+
+
+def statuses(sha):
+    """The latest state of each context that reported on the commit.
+
+    Both forges answer `commits/<sha>/status` with one entry per context, so a
+    context that passed and then failed is one row and not two. Forgejo pages
+    that answer and names the page size `limit`; GitHub ignores the name and
+    pages by 30, which the loop still walks because `total_count` is given.
+    """
+    found = []
+    page = 1
+    while True:
+        answer = get(f"commits/{sha}/status?limit={STATUS_PAGE}&page={page}")
+        entries = answer.get("statuses") or []
+        found.extend(entries)
+        if not entries or len(found) >= (answer.get("total_count") or 0):
+            return found
+        page += 1
+
+
+def state_of(status):
+    """A commit status's state: GitHub spells it `state`, Forgejo `status`."""
+    return status.get("state") or status.get("status") or ""
 
 
 def tally(sha):
     """How the commit's checks ended: {"fail", "running", "ok", "other"}.
 
-    Check runs (GitHub Actions and other apps) and commit statuses (external
-    CI) both count; a status is one entry per context, its latest state.
-    Cancelled, skipped and neutral runs are "other": not a verdict either way.
+    On GitHub check runs (Actions and other apps) and commit statuses (external
+    CI) both count. On Forgejo every job of its own Actions is a commit status,
+    so there are no check runs to read.
     """
     counts = {"fail": 0, "running": 0, "ok": 0, "other": 0}
-    for page in range(1, MAX_PAGES + 1):
-        answer = get(f"commits/{sha}/check-runs?per_page=100&page={page}")
-        runs = answer.get("check_runs", [])
-        for run in runs:
-            if run["status"] != "completed":
-                counts["running"] += 1
-            elif run["conclusion"] in FAILED:
-                counts["fail"] += 1
-            elif run["conclusion"] in PASSED:
-                counts["ok"] += 1
-            else:
-                counts["other"] += 1
-        if page * 100 >= answer.get("total_count", 0) or not runs:
-            break
-    for status in get(f"commits/{sha}/status").get("statuses", []):
-        key = {"success": "ok", "pending": "running"}.get(status["state"], "fail")
-        counts[key] += 1
+    if forge == "github":
+        for page in range(1, MAX_PAGES + 1):
+            answer = get(f"commits/{sha}/check-runs?per_page=100&page={page}")
+            runs = answer.get("check_runs", [])
+            for run in runs:
+                if run["status"] != "completed":
+                    counts["running"] += 1
+                elif run["conclusion"] in CHECK_FAILED:
+                    counts["fail"] += 1
+                elif run["conclusion"] in {"success"}:
+                    counts["ok"] += 1
+                else:
+                    counts["other"] += 1
+            if page * 100 >= answer.get("total_count", 0) or not runs:
+                break
+    for status in statuses(sha):
+        counts[STATUS.get(state_of(status), "other")] += 1
     return counts
 
 
@@ -113,7 +166,10 @@ def verdict(counts):
     return "info"
 
 
-query = {"state": "open", "sort": "updated", "direction": "desc", "per_page": count}
+if forge == "forgejo":
+    query = {"state": "open", "sort": "recentupdate", "limit": count}
+else:
+    query = {"state": "open", "sort": "updated", "direction": "desc", "per_page": count}
 if plugin.params.get("base"):
     query["base"] = plugin.params["base"]
 try:
@@ -144,7 +200,7 @@ for pull in pulls:
         items.append({"text": text, "status": verdict(counts), "counts": counts})
 if not items:
     items = [("открытых PR нет", "info")]
-if expires:
+if forge == "github" and expires:
     try:
         left = (datetime.strptime(expires, "%Y-%m-%d %H:%M:%S %z") - datetime.now(timezone.utc)).days
     except ValueError:

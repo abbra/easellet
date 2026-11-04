@@ -1,7 +1,7 @@
 name = "ci"
 title = "Пул-реквесты и проверки"
-description = "Последние открытые PR репозитория GitHub и сколько их проверок упало, идёт и прошло (GitHub Actions и внешние CI). Без изменений — без обновления рамки."
-i18n = { en = { title = "Pull requests and checks", description = "A repository's latest open GitHub PRs and how many of their checks failed, are running and passed (GitHub Actions and external CI). Unchanged — no frame update." } }
+description = "Последние открытые PR репозитория GitHub или Forgejo и сколько их проверок упало, идёт и прошло (Actions и внешние CI). Без изменений — без обновления рамки."
+i18n = { en = { title = "Pull requests and checks", description = "A repository's latest open GitHub or Forgejo PRs and how many of their checks failed, are running and passed (Actions and external CI). Unchanged — no frame update." } }
 category = "news"
 run = "run.py"
 timeout_s = 40
@@ -32,16 +32,25 @@ i18n = { en = { title = "How many PRs" } }
 default = "6"
 
 [[param]]
+id = "forge"
+type = "choice"
+title = "Хостинг"
+choices = ["github", "forgejo"]
+default = "github"
+note = "github — GitHub и GitHub Enterprise; forgejo — Forgejo или Gitea, вместе с адресом API."
+i18n = { en = { title = "Forge", note = "github — GitHub and GitHub Enterprise; forgejo — Forgejo or Gitea, together with the API address." } }
+
+[[param]]
 id = "api"
 type = "url"
 title = "Адрес API"
 default = "https://api.github.com"
-note = "Для GitHub Enterprise: https://<сервер>/api/v3."
-i18n = { en = { title = "API address", note = "For GitHub Enterprise: https://<server>/api/v3." } }
+note = "GitHub Enterprise: https://<сервер>/api/v3. Forgejo: https://<сервер>/api/v1."
+i18n = { en = { title = "API address", note = "GitHub Enterprise: https://<server>/api/v3. Forgejo: https://<server>/api/v1." } }
 
 [[param]]
 id = "token"
 type = "secret"
-title = "Токен GitHub"
-note = "Fine-grained, только чтение: Pull requests, Checks, Commit statuses. Без токена GitHub даёт 60 запросов в час, и за раз проверяются только 3 PR."
-i18n = { en = { title = "GitHub token", note = "Fine-grained, read-only: Pull requests, Checks, Commit statuses. Without a token GitHub allows 60 requests an hour, and only 3 PRs are checked per run." } }
+title = "Токен"
+note = "GitHub — fine-grained, только чтение: Pull requests, Checks, Commit statuses. Без токена GitHub даёт 60 запросов в час, и за раз проверяются только 3 PR. Forgejo и Gitea — Settings → Applications, право read:repository (в Gitea — repo)."
+i18n = { en = { title = "Token", note = "GitHub — fine-grained, read-only: Pull requests, Checks, Commit statuses. Without a token GitHub allows 60 requests an hour, and only 3 PRs are checked per run. Forgejo and Gitea — Settings → Applications, the read:repository scope (repo in Gitea)." } }

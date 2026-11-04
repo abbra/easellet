@@ -185,7 +185,7 @@ alone.
 | `spot` | The Nord Pool electricity price for Finland, Estonia, Lithuania or Latvia: the current hour, the cheapest and dearest two hours ahead, and tomorrow against today. | Nothing (Elering). |
 | `agenda` | The next events of an iCalendar calendar. By voice, for the day named («что у меня завтра», "what is on tomorrow"). | A calendar address, a file, or a path. No key. |
 | `news` | Headlines of an RSS/Atom feed. | A feed URL. |
-| `ci` | The latest open PRs of a GitHub repository, each with how many checks failed, ran and passed (Actions and external CI). | A read-only token (see below). |
+| `ci` | The latest open PRs of a GitHub or Forgejo repository, each with how many checks failed, ran and passed (Actions and external CI). | A read-only token for a private repository (see below). |
 | `note` | A title and text. | — |
 | `photo-folder` | Photos from a folder on this host, in turn. | A folder. |
 | `ai-image` | A generated picture. | An OpenAI-compatible images endpoint. |
@@ -224,19 +224,36 @@ publishes a whole day, so a partial day has no mean on the card. The card answer
 `none` when its rows do not change, and a run in the same hour asks for no prices
 again. The default interval is 15 minutes, so the card follows the hour.
 
-`ci` counts both kinds of CI reports on a PR's head commit: check runs (GitHub
-Actions and other apps) and commit statuses (external CI). Its token is a GitHub
-**fine-grained personal access token** (Settings → Developer settings → Personal
-access tokens → Fine-grained tokens). For public repositories, use repository
-access "Public repositories (read-only)". For private repositories, use only the
-repositories in question with read-only *Pull requests*, *Checks* and *Commit
-statuses*. Organisations can limit a token's lifetime. FreeIPA refuses tokens that
-are valid for more than 366 days, with a 403 that the preview shows. Pick an
-expiration within the limit. When the token nears its expiry, GitHub's "Regenerate
-token" gives a new value to paste into the job. From 14 days before expiry, the card
-carries a yellow line that says so. Without a token, GitHub allows 60 requests an
-hour, which is enough for three PRs per run. `api` points the plugin at GitHub
-Enterprise.
+`ci` shows the latest open pull requests of a GitHub or Forgejo repository, each
+with how many of its checks failed, are running and passed. The `forge` parameter
+names the forge: `github` (the default) or `forgejo`. A Forgejo repository also
+needs `api`, for example `https://codeberg.org/api/v1`, because one instance has no
+address in common with another.
+
+The two forges report CI in different places, and the plugin reads what each one
+has. On GitHub, check runs (GitHub Actions and other apps) and commit statuses
+(external CI) both count. On Forgejo, its own Actions write a commit status for
+every job, the way external CI does on GitHub, so there are no check runs to read.
+A commit status is one row per context, so a job that passed and then failed is one
+row and not two. A cancelled, skipped, neutral or warning row is neither a pass nor
+a failure.
+
+On GitHub the token is a **fine-grained personal access token** (Settings →
+Developer settings → Personal access tokens → Fine-grained tokens). For public
+repositories, use repository access "Public repositories (read-only)". For private
+repositories, use only the repositories in question with read-only *Pull requests*,
+*Checks* and *Commit statuses*. Organisations can limit a token's lifetime. FreeIPA
+refuses tokens that are valid for more than 366 days, with a 403 that the preview
+shows. Pick an expiration within the limit. When the token nears its expiry,
+GitHub's "Regenerate token" gives a new value to paste into the job. From 14 days
+before expiry, the card carries a yellow line that says so. Without a token, GitHub
+allows 60 requests an hour, which is enough for three PRs per run, and the rest of
+the card waits for the next run. `api` points the plugin at GitHub Enterprise.
+
+On Forgejo the token is one from Settings → Applications with the `read:repository`
+scope, and only a private repository needs it. An instance has no hourly request
+limit, so every PR on the card is checked in one run. Forgejo does not report when
+a token expires, so the yellow expiry line is GitHub's alone.
 
 `news`, `ci`, `sun`, `air` and `spot` answer `none` when nothing changed, so an
 unchanged feed, CI board, sky or price never refreshes the panel.
