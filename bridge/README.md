@@ -1,14 +1,31 @@
 # easellet-bridge
 
-The photo frame uses this LAN service for speech. It exists so that the firmware
-does **not** need a cloud API key, TLS, a certificate bundle, base64 or a JSON
-parser. The device uploads companded audio, gets text back and asks for speech.
-Everything that needs a real CPU happens here.
+Easellet Bridge is a LAN service for the photo frame. It handles speech
+recognition, language-model requests and speech synthesis on a host computer,
+so the frame does not need to run those models.
+
+The bridge also provides a web interface, scheduled plugin content, OpenDisplay
+support and firmware updates. For the frame itself, see the
+[project README](../README.md); for writing plugins, see the
+[plugin guide](plugins/README.md).
+
+## Find your way around
+
+- [Run the bridge and connect a frame](#running-it)
+- [Configure speech recognition, a model and a voice](#backends)
+- [Use the OpenDisplay server](#opendisplay-server) or
+  [manage firmware releases](#firmware-releases)
+- [Understand the frame-to-bridge protocol](#wire-protocol)
+- [Troubleshoot speech captures](#keeping-the-audio-the-device-sent)
+
+The frame and bridge communicate over the LAN using plain HTTP. A bearer token
+can restrict access, but it does not encrypt the traffic.
 
 ## Wire protocol
 
-There are three `POST` endpoints. All use plain text or raw audio. This is the whole
-contract. The firmware side is `../src/bridge.rs`, and its tests pin the same bytes.
+The speech interface has three `POST` endpoints and a `GET` health check.
+Requests and responses use plain text or raw audio. The firmware implementation
+is in `../src/bridge.rs`, with tests for the same protocol.
 
 | Path | Request body | Response |
 |------|--------------|----------|
@@ -94,6 +111,8 @@ start. Digital silence shows no energy.
 
 ## Running it
 
+Run these commands from the `bridge/` directory:
+
 ```bash
 ./build.sh run                              # stubs only, no models, no dependencies
 ./build.sh run -- --token s3cret            # require a bearer token
@@ -102,7 +121,8 @@ start. Digital silence shows no energy.
                   --tts 'cmd:piper --model ru_RU-irina-medium.onnx --output-raw'
 ```
 
-Then point the frame at it, on the card:
+Then put the bridge address and, if configured, its token in the frame's
+`EASELLET/CONFIG.TXT` on the SD card:
 
 ```
 ai.url=http://192.168.50.10:8080
