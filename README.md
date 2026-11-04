@@ -1,42 +1,53 @@
 # Easellet
 
-Easellet is a Rust/ESP-IDF firmware for the Waveshare ESP32-S3-PhotoPainter. It
-provides hardware diagnostics, a card slideshow, a browser portal and a voice
-assistant through a LAN bridge. `PLAN.md` gives the roadmap.
-`research/device/INVENTORY.md` gives the hardware identity, the battery data and the
-verified factory backup.
+Easellet is firmware for the Waveshare ESP32-S3-PhotoPainter, a 7.3-inch,
+six-color e-paper photo frame. It runs a photo slideshow, provides a browser
+portal for pictures and settings, and can use a LAN bridge for voice assistance
+and scheduled content.
 
-**The firmware supports GPIO, I²C diagnostics, display refresh and SD mount.** The
-commands `help`, `info`, `buttons`, `led`, `sensor`, `rtc`, `pmu`, `sd` and
-`display` are available. PSRAM reports 8 MiB. The
-green LED and the KEY press respond. The SHTC3 temperature and humidity readings are
-stable, and their CRCs are valid. The PCF85063 answers, but it reports a stopped
-oscillator: the time is not set, and there is no backup cell. The PMIC is an
-**AXP2101** (chip ID 0x4A), not the TG28 that the V2 schematic text names. Two
-PMIC writes with a narrow scope run at boot: ALDO4 (`EPD_VCC`) and ALDO3
-(`Audio_VCC`) are set to 3.3 V and enabled. Both writes read the registers back.
-The firmware does not touch charging or the other rails. The ALDO3/Audio_VCC write
-supports the audio stage. Review that write before the next flash. The vendor
-16 GB-class FAT card mounts at `/sdcard`. The firmware lists its seven top-level
-directories and does not write to or format the card.
+## Find your way around
 
-The 7.3-inch ED2208 / Spectra 6 panel refreshes an 800x480 six-color image in about
-30 s. The panel survives deep sleep and a new initialization. A bar refresh without the SD
-card takes 30.9 s and 30.3 s in two measurements, and the console stays available
-during the refresh. With the card inserted at 20 MHz, the vendor image
-loads and refreshes in 33.9 s. The driver and the converter apply the vendor's full
-180-degree rotation: both axes are flipped, x=0 is the viewer's left edge, and the
-bar order is black, yellow, red, blue, green, white. The audio stage uses ES8311
-playback and ES7210 capture at 24 kHz/16-bit stereo. The commands `audio level`,
-`audio tone`, `audio rec` (which writes `/sdcard/EASELLET/REC.WAV`) and `audio play
-<file.wav>` are available. The SD test directory is writable. Playback and capture
-share the one full-duplex I²S port, so the firmware enables both directions
-together. ESP-IDF makes the later-initialized TX channel the clock consumer. A TX
-channel alone never drains. Remaining work: radio, more PMIC configuration, RTC
-time setting and system sleep.
+For everyday use:
 
-`TODO.md` holds the live task queue for stages that are not built yet. `PLAN.md` is
-the original roadmap and is historical.
+- [Buttons and lights](#buttons-and-lights) and [deep sleep](#deep-sleep)
+- [Slideshow](#slideshow) and [browser portal](#portal-upload-gallery-and-settings-in-a-browser)
+- [Voice assistant and bridge](#voice-assistant-bridge)
+- [Settings on the SD card](#settings-on-the-card)
+- [Updating a frame](#updating-a-frame)
+
+For setup and development:
+
+- [Build and checks](#build-on-this-machine), [CI](#the-gate-on-a-server), and [releases](#releases)
+- [USB diagnostic commands](#usb-diagnostic-protocol-after-approved-flashing)
+- [OpenDisplay and the bridge](#opendisplay-and-the-bridge)
+- [Image conversion](#host-image-converter) and [image format](#images-the-wire-format-is-el6-and-the-browser-does-the-conversion)
+- [Flashing precautions and partition table](#flashing-gate)
+- [Current tasks and bring-up history](TODO.md)
+
+The [bridge README](bridge/README.md) covers bridge setup and backends; the
+[plugins README](bridge/plugins/README.md) describes plugins. `PLAN.md` is the
+historical roadmap. Hardware details and
+the verified factory backup are recorded in `research/device/INVENTORY.md`.
+
+## Hardware at a glance
+
+- The 800×480 ED2208 / Spectra 6 display takes about 30 seconds to refresh.
+  It retains its image during deep sleep. The six colors are black, yellow,
+  red, blue, green, and white.
+- The SHTC3 measures temperature and humidity. The PCF85063 RTC was observed
+  with its oscillator stopped and no backup cell.
+- The PMIC is an **AXP2101** (chip ID `0x4A`), despite the TG28 name in the
+  V2 schematic text. Boot enables the 3.3 V display rail; the audio path checks
+  and, if necessary, enables the 3.3 V audio rail. See the
+  [PMIC details](#usb-diagnostic-protocol-after-approved-flashing) before flashing.
+- The vendor's 16 GB-class FAT card mounts at `/sdcard`. The firmware can read
+  its pictures and write settings, uploads, and recordings under `EASELLET`.
+- The ES8311 and ES7210 provide 24 kHz, 16-bit stereo playback and capture.
+  Playback and capture share a full-duplex I²S port.
+
+**First-time flashing can make factory settings inaccessible.** Review the
+[flashing gate](#flashing-gate), device identity, and backup before writing to
+the board. A successful build alone does not verify the hardware.
 
 ## Build on this machine
 
@@ -384,15 +395,14 @@ audio.gain_db=30.0
 ai.idle=key
 ```
 
-Parsing is bounded (1 KiB, 32 lines) and strict. The parser rejects unknown keys
+Parsing is bounded (4 KiB, 64 lines) and strict. The parser rejects unknown keys
 and malformed lines with a line number, so it reports a typo instead of ignoring
 it. An invalid file is never fatal and never writes anything. The built-in defaults
 stay in force, and `info` prints the parse error.
 
-The passphrase is stored in the clear on purpose. Reading the card requires
-physical access to the device. At that point the network is reachable anyway, so
-obfuscation would buy nothing and would cost a retyping after every boot. `config`
-prints `password=<set>`, never the value.
+**The Wi-Fi passphrase is stored as plain text on the SD card.** Anyone who can
+read the card can recover it. The `config` command displays `password=<set>`
+instead of printing the passphrase.
 
 `wifi.auto=1` joins at boot and **stays** connected, so later features find a link
 that is already up. The cost is the radio's idle current. If the RTC holds no valid
@@ -608,7 +618,7 @@ a sentence does not pay the load cost:
 
 ```bash
 ~/local/19cce691/llama-server \
-    -m ~/tmp/small-llms/gguf/Phi-4-mini-instruct-Q4_K_M.gguf \
+    -m ~/models/crane/qwen3-4b/Qwen3-4B-Instruct-2507-Q4_K_M.gguf \
     --host 127.0.0.1 --port 8096 -c 4096 -t 24 --jinja
 ```
 
@@ -616,8 +626,8 @@ Recognition is Whisper on the host, in-process. `small` is the smallest model th
 carries Russian. A 10 s utterance takes about 9 s in a release build. The crate is
 vendored with a one-token fix (`bridge/vendor/rwhisper.patch`) because upstream
 0.4.1 never asks the model to transcribe. That defect turns Russian speech into
-English prose. Answers come from a local `llama-server` that runs Phi-4-mini through
-`bridge/scripts/llm-local.py` (1.3 s for a one-sentence reply on CPU). No provider
+English prose. Answers come from a local `llama-server` that runs Qwen3-4B-Instruct
+through `bridge/scripts/llm-local.py` (1.4–2.1 s for a one-sentence reply on CPU). No provider
 key exists anywhere in the path. Speech is piper, a neural Russian voice
 (`bridge/scripts/tts-piper.sh`, one 60 MB model fetched once). `espeak-ng` remains
 the dependency-free fallback, but its Russian sounds mechanical. See
@@ -643,7 +653,7 @@ ai.key=<token>
 offline and decodes a synthetic reply. Both console setters apply immediately and
 survive only if `config save` runs, exactly like the volume and gain commands.
 
-Two commands actually talk to the bridge:
+Assistant commands and settings:
 
 | Command | Behavior |
 |---|---|
@@ -654,9 +664,10 @@ Two commands actually talk to the bridge:
 | `ai idle off\|key\|voice` | Selects who can start a turn when nobody types: nobody (default), any KEY press, or sustained loudness on the microphones. `config save` persists the mode as `ai.idle`. |
 | `ai threshold <20..4000>` | Sets the detector's floor live and reports the resulting trigger, without a flash. Use it to tune a room during a conversation. |
 
-Both report per-stage timings (`waited_ms` for the KEY press, `cue_ms`, `capture_ms`,
-`roundtrip_ms`, or `llm_ms`, `tts_ms`, `play_ms`). A turn that produces nothing
-looks identical from the outside, whichever stage failed. `ai stt` refuses a capture
+Assistant commands report per-stage timings (`waited_ms` for the KEY press,
+`cue_ms`, `capture_ms`, `roundtrip_ms`, or `llm_ms`, `tts_ms`, `play_ms`).
+A turn that produces nothing looks identical from the outside, whichever stage
+failed. `ai stt` refuses a capture
 that carries no more energy than an idle room:
 `ERR audio utterance: microphone heard nothing (peak_l=… rms_l=…)`. Silence then
 costs nothing instead of a round trip and an invented sentence. The prompt in
@@ -826,27 +837,22 @@ that domain as `Host` and gets 403. A request must arrive whole within 30 s, so 
 client that trickles bytes cannot hold the one-connection server. A firmware upload
 gets 180 s, because every 4 KB of it waits for a flash write.
 
-**A picture can arrive in three ways**, and they are not the same thing:
+### Using the portal
 
-1. A file dragged from the desktop (`dataTransfer.files`).
-2. A picture dragged from another tab, which carries only a URL, with `files` empty.
-3. A paste.
+Add a picture by dragging a file from your computer, dragging a picture from
+another browser tab, or pasting it. When a website does not allow the browser
+to fetch its picture, download the file and drag that instead.
 
-All three go through one resolver, so a drag from a browser tab works instead of
-highlighting the box and doing nothing. The page fetches a URL from another site,
-which the browser allows only if that site sends `Access-Control-Allow-Origin`. When
-the site does not, the page says so and asks for the file instead of failing
-silently. `tools/check-portal-js.mjs` runs the resolver from the page's own source
-against all three shapes in the gate (`portal-js: drop sources ok`).
+The portal has four tabs:
 
-**Four tabs, because three different people use this page.** «Photo» (drop a
-picture, see the frame it will become, send it) and «Gallery» (what is on the wall,
-and «Show» to repaint the panel with a particular picture) are the everyday part.
-Every control that reconfigures the device (Wi-Fi, audio, the assistant, the
-slideshow, the page password) lives behind «Settings». That tab opens with a line
-that says it changes the frame for everyone. «Firmware» is the one-off update. The
-tab is the URL hash (`#photos`, `#gallery`, `#settings`, `#firmware`), so a link
-opens the right place and the back button works.
+- **Photo:** preview and upload a picture.
+- **Gallery:** browse pictures and choose one to show.
+- **Settings:** change Wi-Fi, audio, assistant, slideshow, and portal settings.
+  These changes affect everyone using the frame.
+- **Firmware:** install an update.
+
+Each tab has its own URL hash (`#photos`, `#gallery`, `#settings`, or
+`#firmware`), so you can link to it or use the browser's back button.
 
 **The interface speaks English and Russian, English by default.** A page that greets
 a stranger in a language that they did not choose is a page that they cannot read.
