@@ -71,13 +71,16 @@ fn main() {
     }
 }
 
-/// Where plugins are looked for: the user's own directory next to the settings
-/// file, then the ones shipped in `bridge/plugins` (found from the binary's
-/// place in `bridge/target/<profile>/`).
+/// Look for user plugins first, then installed or source-tree plugins.
 fn plugin_dirs(settings_path: &std::path::Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(parent) = settings_path.parent() {
         dirs.push(parent.join("plugins"));
+    }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(prefix) = exe.parent().and_then(|dir| dir.parent())
+    {
+        dirs.push(prefix.join("share/easellet-bridge/plugins"));
     }
     if let Ok(exe) = std::env::current_exe()
         && let Some(bridge) = exe
