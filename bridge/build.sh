@@ -21,12 +21,15 @@ export PATH="/usr/bin:$PATH"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 cd "$scratch"
+target_dir="${CARGO_TARGET_DIR:-${CARGO_BUILD_TARGET_DIR:-$here/target}}"
+[[ "$target_dir" = /* ]] || target_dir="$scratch/$target_dir"
 case "${1:-test}" in
     test)
         # The firmware's `cargo fmt --check` at the repository root does not reach
         # this package: it is a separate manifest, not a workspace member.
         "$cargo_bin" fmt --check --manifest-path "$here/Cargo.toml"
         "$cargo_bin" test --quiet --manifest-path "$here/Cargo.toml"
+        python3 -m unittest discover -s "$here/scripts" -p 'test_*.py'
         # `cargo test` builds the test harnesses and leaves the executable alone,
         # and tools/bridge-smoke.py starts that executable to ask the real server
         # what it serves. Building it here keeps one command enough for both.
@@ -34,7 +37,10 @@ case "${1:-test}" in
         ;;
     run)
         shift
-        exec "$cargo_bin" run --quiet --manifest-path "$here/Cargo.toml" -- "$@"
+        [ "${1:-}" != -- ] || shift
+        "$cargo_bin" build --quiet --manifest-path "$here/Cargo.toml" --target-dir "$target_dir"
+        cd "$here/.."
+        exec "$target_dir/debug/easellet-bridge" "$@"
         ;;
     fmt)
         "$cargo_bin" fmt --manifest-path "$here/Cargo.toml"
@@ -50,8 +56,11 @@ case "${1:-test}" in
         ;;
     serve)
         shift
-        exec "$cargo_bin" run --quiet --release --manifest-path "$here/Cargo.toml" \
-            --features whisper -- "$@"
+        [ "${1:-}" != -- ] || shift
+        "$cargo_bin" build --quiet --release --manifest-path "$here/Cargo.toml" \
+            --target-dir "$target_dir" --features whisper
+        cd "$here/.."
+        exec "$target_dir/release/easellet-bridge" "$@"
         ;;
     # Recognition without the frame: `build.sh transcribe small ru file.wav`.
     transcribe)

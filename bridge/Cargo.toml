@@ -53,9 +53,8 @@ rodio = { version = "0.20.1", default-features = false, optional = true }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"], optional = true }
 
 [features]
-default = []
-# `cargo run --features whisper -- --stt whisper` transcribes for real. Left off by
-# default so the protocol can be exercised with the stubs before models are chosen.
+default = ["whisper"]
+# Disable default features for a smaller build without in-process recognition.
 whisper = [
     "dep:rwhisper",
     "dep:tokio",
