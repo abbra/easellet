@@ -36,6 +36,9 @@ pub trait Llm: Send {
     /// Extra environment for a command backend (`EASEL_LLM_SYSTEM`, `EASEL_LLM_URL`
     /// from the settings); other backends have nothing to configure.
     fn set_env(&mut self, _env: &[(String, String)]) {}
+
+    /// Previous conversation as JSON for command backends.
+    fn set_context(&mut self, _context: &str) {}
 }
 
 /// Text to speech, plain text in, 16 kHz mono µ-law out.
@@ -116,6 +119,7 @@ pub struct CommandBackend {
     args: Vec<String>,
     /// Settings-supplied environment, on top of the inherited one.
     env: Vec<(String, String)>,
+    context: String,
 }
 
 impl CommandBackend {
@@ -133,6 +137,7 @@ impl CommandBackend {
             program,
             args: parts.map(str::to_owned).collect(),
             env: Vec::new(),
+            context: String::new(),
         })
     }
 
@@ -198,8 +203,12 @@ impl Llm for CommandBackend {
         env.clone_into(&mut self.env);
     }
 
+    fn set_context(&mut self, context: &str) {
+        self.context = context.to_owned();
+    }
+
     fn reply(&mut self, prompt: &str, model: &str) -> Result<String, String> {
-        let stdout = self.run(prompt, &[])?;
+        let stdout = self.run(prompt, &[("EASEL_LLM_CONTEXT", &self.context)])?;
         let text = String::from_utf8(stdout)
             .map_err(|_| format!("{} produced non-UTF-8 output", self.program))?;
         let text = text.trim().to_owned();

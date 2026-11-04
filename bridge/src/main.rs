@@ -50,7 +50,8 @@ usage: easellet-bridge [options]
   --wake <stems>       comma-separated stems a voice-triggered transcript must
                        contain, e.g. 'рамк,фоторам,frame' (also EASEL_WAKE)
 
-Precedence: the file, then EASEL_WAKE / EASEL_LLM_URL / EASEL_LLM_SYSTEM, then flags. A
+Precedence: the file, then EASEL_WAKE / EASEL_LLM_URL / EASEL_LLM_API_KEY /
+EASEL_LLM_SYSTEM, then flags. A
 value set by a flag or variable wins for this run and is read-only in the web UI
 (http://<addr>/); everything else is edited there and saved to the file.
 
@@ -207,6 +208,7 @@ fn run() -> Result<(), String> {
     for (key, variable) in [
         ("wake", "EASEL_WAKE"),
         ("llm_url", "EASEL_LLM_URL"),
+        ("llm_api_key", "EASEL_LLM_API_KEY"),
         ("llm_system", "EASEL_LLM_SYSTEM"),
     ] {
         if let Ok(value) = std::env::var(variable)
@@ -325,6 +327,8 @@ fn run() -> Result<(), String> {
         live: Some(Arc::clone(&live)),
         history: Some(Arc::clone(&history)),
         last_heard: None,
+        conversations: Default::default(),
+        context_seconds: 120,
         tools: Some(Arc::new({
             let context = Arc::clone(&context);
             move |question: &str, peer: &str| ui::assistant_tool(&context, question, peer)

@@ -3,6 +3,7 @@
 use crate::backends::{ASSISTANT_RATE, Llm, Stt, Tts};
 use crate::history::History;
 use crate::settings::Live;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -122,6 +123,13 @@ pub struct Bridge {
     /// Plugins as the assistant's tools: given the question and the frame's
     /// address, the spoken reply when a plugin takes the question. `None` in tests.
     pub tools: Option<Arc<Tool>>,
+    pub(crate) conversations: BTreeMap<String, Conversation>,
+    pub(crate) context_seconds: u64,
+}
+
+pub(crate) struct Conversation {
+    updated: Instant,
+    turns: Vec<(String, String)>,
 }
 
 /// See [`Bridge::tools`].
@@ -304,7 +312,11 @@ impl Bridge {
             self.token = live.token.clone();
             self.wake = live.wake.clone();
             self.llm.set_env(&live.llm_env);
+            self.context_seconds = live.context_seconds;
             self.stt.set_prompt(&live.stt_prompt);
+        }
+        if self.context_seconds == 0 {
+            self.conversations.clear();
         }
         let bytes_in = request.body.len();
         let started = Instant::now();
@@ -489,6 +501,30 @@ impl Bridge {
                     Ok(_) => return Response::text(400, "ERR empty prompt\n"),
                     Err(_) => return Response::text(400, "ERR prompt is not UTF-8\n"),
                 };
+                let command = noise_key(&self.without_wake(&prompt));
+                if matches!(
+                    command.as_str(),
+                    "new conversation"
+                        | "change context"
+                        | "change the context"
+                        | "reset context"
+                        | "новый разговор"
+                        | "новая беседа"
+                        | "смени контекст"
+                        | "сменить контекст"
+                        | "сменить тему"
+                        | "новая тема"
+                ) {
+                    self.conversations.remove(request.peer);
+                    return Response::text(
+                        200,
+                        if command.is_ascii() {
+                            "Starting a new conversation."
+                        } else {
+                            "Начинаем новый разговор."
+                        },
+                    );
+                }
                 // A question a plugin answers ("покажи погоду") goes to that
                 // plugin instead of the model; the frame is told to leave its
                 // panel alone, because the plugin's picture is on its way.
@@ -520,8 +556,55 @@ impl Bridge {
                     eprintln!("  arithmetic: exact answer, no model");
                     return Response::text(200, reply);
                 }
-                match self.llm.reply(&prompt, model) {
-                    Ok(text) => Response::text(200, text),
+                let window = Duration::from_secs(self.context_seconds);
+                self.conversations
+                    .retain(|_, conversation| conversation.updated.elapsed() < window);
+                let messages: Vec<_> = self
+                    .conversations
+                    .get(request.peer)
+                    .into_iter()
+                    .flat_map(|conversation| &conversation.turns)
+                    .flat_map(|(question, answer)| {
+                        [
+                            serde_json::json!({"role": "user", "content": question}),
+                            serde_json::json!({"role": "assistant", "content": answer}),
+                        ]
+                    })
+                    .collect();
+                self.llm
+                    .set_context(&serde_json::Value::Array(messages).to_string());
+                let result = self.llm.reply(&prompt, model);
+                self.llm.set_context("[]");
+                match result {
+                    Ok(text) => {
+                        if self.context_seconds > 0 && prompt.len() + text.len() <= 4096 {
+                            if !self.conversations.contains_key(request.peer)
+                                && self.conversations.len() >= 32
+                                && let Some(oldest) = self
+                                    .conversations
+                                    .iter()
+                                    .min_by_key(|(_, c)| c.updated)
+                                    .map(|(peer, _)| peer.clone())
+                            {
+                                self.conversations.remove(&oldest);
+                            }
+                            let conversation = self
+                                .conversations
+                                .entry(request.peer.to_owned())
+                                .or_insert_with(|| Conversation {
+                                    updated: Instant::now(),
+                                    turns: Vec::new(),
+                                });
+                            if conversation.turns.len() == 4 {
+                                conversation.turns.remove(0);
+                            }
+                            conversation.turns.push((prompt, text.clone()));
+                            conversation.updated = Instant::now();
+                        } else if self.context_seconds > 0 {
+                            self.conversations.remove(request.peer);
+                        }
+                        Response::text(200, text)
+                    }
                     Err(error) => Response::text(500, format!("ERR llm: {error}\n")),
                 }
             }
@@ -580,6 +663,8 @@ mod tests {
             live: None,
             history: None,
             last_heard: None,
+            conversations: BTreeMap::new(),
+            context_seconds: 120,
             tools: None,
         }
     }
@@ -602,6 +687,67 @@ mod tests {
             trigger: "",
             body,
         })
+    }
+
+    #[test]
+    fn conversations_are_isolated_expire_and_can_be_reset() {
+        #[derive(Default)]
+        struct ContextLlm(Vec<serde_json::Value>);
+        impl Llm for ContextLlm {
+            fn set_context(&mut self, context: &str) {
+                self.0 = serde_json::from_str(context).unwrap();
+            }
+            fn reply(&mut self, _: &str, _: &str) -> Result<String, String> {
+                Ok(if self.0.is_empty() {
+                    "new"
+                } else {
+                    "continued"
+                }
+                .to_owned())
+            }
+        }
+        let mut bridge = bridge(None);
+        bridge.llm = Box::new(ContextLlm::default());
+        let ask = |bridge: &mut Bridge, peer: &str, text: &str| {
+            String::from_utf8(
+                bridge
+                    .dispatch(Incoming {
+                        method: "POST",
+                        path: "/llm",
+                        auth: None,
+                        lang: "en",
+                        voice: "",
+                        model: "",
+                        peer,
+                        trigger: "console",
+                        body: text.as_bytes().to_vec(),
+                    })
+                    .body,
+            )
+            .unwrap()
+        };
+        assert_eq!(ask(&mut bridge, "frame-a", "Hello there"), "new");
+        assert_eq!(ask(&mut bridge, "frame-b", "Hello there"), "new");
+        assert_eq!(ask(&mut bridge, "frame-a", "Tell me more"), "continued");
+        assert_eq!(
+            ask(&mut bridge, "frame-a", "new conversation"),
+            "Starting a new conversation."
+        );
+        assert_eq!(ask(&mut bridge, "frame-a", "Tell me more"), "new");
+        bridge.wake = vec!["рамк".to_owned()];
+        assert_eq!(
+            ask(&mut bridge, "frame-a", "Рамка, смени контекст"),
+            "Начинаем новый разговор."
+        );
+        assert_eq!(ask(&mut bridge, "frame-a", "Tell me more"), "new");
+        assert_eq!(ask(&mut bridge, "frame-b", "Tell me more"), "continued");
+        bridge.conversations.get_mut("frame-b").unwrap().updated =
+            Instant::now() - Duration::from_secs(121);
+        assert_eq!(ask(&mut bridge, "frame-b", "Tell me more"), "new");
+        bridge.context_seconds = 0;
+        assert_eq!(ask(&mut bridge, "frame-a", "Tell me more"), "new");
+        bridge.context_seconds = 120;
+        assert_eq!(ask(&mut bridge, "frame-a", "Tell me more"), "new");
     }
 
     #[test]

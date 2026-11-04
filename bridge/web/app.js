@@ -1342,8 +1342,10 @@ setInterval(() => {
 const FIELDS = [
   { key: "wake", kind: "list" },
   { key: "llm_system", kind: "textarea" },
+  { key: "context_seconds", kind: "number" },
   { key: "stt_prompt", kind: "textarea" },
   { key: "llm_url", kind: "text" },
+  { key: "llm_api_key", kind: "secret" },
   { key: "token", kind: "secret" },
   { key: "ui_password", kind: "secret" },
   { key: "ui_hosts", kind: "list" },

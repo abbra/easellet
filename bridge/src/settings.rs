@@ -36,11 +36,15 @@ pub struct Settings {
     pub wake: Vec<String>,
     /// System prompt for the model command (`EASEL_LLM_SYSTEM`); empty = its default.
     pub llm_system: String,
+    /// Seconds between questions in one conversation; 0 disables context.
+    pub context_seconds: u64,
     /// Text the recogniser treats as just heard: the wake word and names it
     /// should expect ("Рамка, покажи погоду в Эспоо"). Whisper only; empty = none.
     pub stt_prompt: String,
     /// Chat-completions URL for the model command (`EASEL_LLM_URL`); empty = its default.
     pub llm_url: String,
+    /// Optional bearer key for the model command (`EASEL_LLM_API_KEY`).
+    pub llm_api_key: String,
     /// Password for the web UI (HTTP Basic, any user name); empty = open.
     pub ui_password: String,
     /// Host names the UI answers to besides IP addresses and local names (`Host`
@@ -94,8 +98,10 @@ impl Default for Settings {
             tts: "stub".to_owned(),
             wake: Vec::new(),
             llm_system: String::new(),
+            context_seconds: 120,
             stt_prompt: String::new(),
             llm_url: String::new(),
+            llm_api_key: String::new(),
             ui_password: String::new(),
             ui_hosts: Vec::new(),
             frames: Vec::new(),
@@ -115,7 +121,7 @@ impl Default for Settings {
 /// Keys that only take effect at start.
 pub const RESTART_KEYS: &[&str] = &["addr", "stt", "llm", "tts"];
 /// Keys whose value is never sent to the browser, only whether it is set.
-pub const SECRET_KEYS: &[&str] = &["token", "ui_password", "firmware_token"];
+pub const SECRET_KEYS: &[&str] = &["token", "ui_password", "firmware_token", "llm_api_key"];
 
 /// Longest text value accepted from the UI; the system prompt is the long one.
 const MAX_VALUE: usize = 4_096;
@@ -128,6 +134,7 @@ pub struct Live {
     pub token: Option<String>,
     pub wake: Vec<String>,
     pub llm_env: Vec<(String, String)>,
+    pub context_seconds: u64,
     pub stt_prompt: String,
     pub ui_password: Option<String>,
     pub ui_hosts: Vec<String>,
@@ -153,8 +160,8 @@ impl Settings {
         let text = toml::to_string_pretty(self).map_err(|error| error.to_string())?;
         let text = format!(
             "# easellet-bridge settings; edited by the web UI as well.\n\
-             # Keys: addr, token, stt, llm, tts, wake, llm_system, stt_prompt, llm_url,\n\
-             # ui_password, ui_hosts, opendisplay_*, firmware_*. Flags and EASEL_* variables\n\
+             # Keys: addr, token, stt, llm, tts, wake, llm_system, context_seconds,\n\
+             # stt_prompt, llm_url, llm_api_key, ui_password, ui_hosts, opendisplay_*, firmware_*. Flags and EASEL_* variables\n\
              # override this file.\n\n{text}"
         );
         if let Some(directory) = path.parent() {
@@ -174,10 +181,14 @@ impl Settings {
         if !self.llm_url.is_empty() {
             llm_env.push(("EASEL_LLM_URL".to_owned(), self.llm_url.clone()));
         }
+        if !self.llm_api_key.is_empty() {
+            llm_env.push(("EASEL_LLM_API_KEY".to_owned(), self.llm_api_key.clone()));
+        }
         Live {
             token: Some(self.token.clone()).filter(|token| !token.is_empty()),
             wake: normalize_wake(&self.wake),
             llm_env,
+            context_seconds: self.context_seconds,
             stt_prompt: self.stt_prompt.clone(),
             ui_password: Some(self.ui_password.clone()).filter(|password| !password.is_empty()),
             ui_hosts: self
@@ -268,17 +279,23 @@ impl Settings {
                 Ok(items)
             };
             match key.as_str() {
-                "token" | "ui_password" | "firmware_token" => {
+                "token" | "ui_password" | "firmware_token" | "llm_api_key" => {
                     let secret = text(value)?;
                     let field = match key.as_str() {
                         "token" => &mut next.token,
                         "ui_password" => &mut next.ui_password,
+                        "llm_api_key" => &mut next.llm_api_key,
                         _ => &mut next.firmware_token,
                     };
                     match secret.as_str() {
                         "" => continue,
                         "-" => field.clear(),
-                        _ if secret.len() < 8 => {
+                        _ if key == "llm_api_key" && secret.chars().any(char::is_control) => {
+                            return Err(
+                                "llm_api_key must not contain control characters".to_owned()
+                            );
+                        }
+                        _ if key != "llm_api_key" && secret.len() < 8 => {
                             return Err(format!("{key} must be at least 8 characters"));
                         }
                         _ => *field = secret,
@@ -290,6 +307,15 @@ impl Settings {
                 "tts" => next.tts = valid_backend(&text(value)?, false)?,
                 "wake" => next.wake = list(value)?,
                 "llm_system" => next.llm_system = text(value)?,
+                "context_seconds" => {
+                    let seconds = value
+                        .as_u64()
+                        .ok_or_else(|| "context_seconds must be a number".to_owned())?;
+                    if seconds > 86_400 {
+                        return Err("context_seconds is at most 86400".to_owned());
+                    }
+                    next.context_seconds = seconds;
+                }
                 "stt_prompt" => next.stt_prompt = text(value)?,
                 "llm_url" => {
                     let url = text(value)?;
@@ -517,10 +543,41 @@ mod tests {
     fn secrets_never_reach_the_browser() {
         let mut settings = Settings::default();
         settings.token = "easellet-lan".to_owned();
+        settings.llm_api_key = "model-secret".to_owned();
         let json = settings.to_json(&pinned(&[])).to_string();
         assert!(!json.contains("easellet-lan"), "{json}");
+        assert!(!json.contains("model-secret"), "{json}");
+        assert!(json.contains("\"llm_api_key\":true"), "{json}");
         assert!(json.contains("\"token\":true"), "{json}");
         assert!(json.contains("\"ui_password\":false"), "{json}");
+    }
+
+    #[test]
+    fn model_key_can_be_set_kept_and_cleared() {
+        let mut settings = Settings::default();
+        settings
+            .apply(&serde_json::json!({"llm_api_key": "key"}), &pinned(&[]))
+            .unwrap();
+        assert_eq!(
+            settings.live().llm_env,
+            [("EASEL_LLM_API_KEY".to_owned(), "key".to_owned())]
+        );
+        settings
+            .apply(&serde_json::json!({"llm_api_key": ""}), &pinned(&[]))
+            .unwrap();
+        assert_eq!(settings.llm_api_key, "key");
+        assert!(
+            settings
+                .apply(
+                    &serde_json::json!({"llm_api_key": "bad\nkey"}),
+                    &pinned(&[])
+                )
+                .is_err()
+        );
+        settings
+            .apply(&serde_json::json!({"llm_api_key": "-"}), &pinned(&[]))
+            .unwrap();
+        assert!(settings.llm_api_key.is_empty());
     }
 
     #[test]
